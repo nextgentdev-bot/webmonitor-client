@@ -215,7 +215,7 @@ function App() {
     <section className="stats">
       <div><span>Tracked sites</span><strong>{dashboard.stats.total}</strong></div>
       <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
-      <div><span>Last run</span><strong>{dashboard.stats.latestRun ? `${dashboard.stats.latestRun.healthy || 0} healthy` : 'No runs'}</strong></div>
+      <div><span>Last run</span><strong>{dashboard.stats.total === 0 ? 'No websites' : dashboard.stats.latestRun ? `${dashboard.stats.latestRun.healthy || 0} healthy` : 'No runs'}</strong></div>
       <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'}>{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
       {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
     </section>
