@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.js",
     "server": "npm --prefix ../web-monitor-server run dev",
     "worker": "npm --prefix ../web-monitor-server run worker",
     "build": "vite build",

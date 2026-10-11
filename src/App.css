@@ -9,6 +9,10 @@
 .site-entry { border-bottom: 1px solid var(--line); }
 .site-entry.has-issues { border-left: 3px solid var(--coral); padding-left: 10px; }
 .site-entry .site-row { border-bottom: 0; }
+.site-number { width: 24px; flex: none; color: var(--muted); text-align: right; font: 10px 'DM Mono', monospace; }
+.live-dot.worker-offline { color: #a84337; }
+.worker-help { color: #a84337 !important; }
+.worker-help code { padding: 2px 4px; background: #ffebe7; }
 .site-progress { display: grid; gap: 5px; padding: 0 0 12px 21px; color: var(--muted); font: 9px 'DM Mono', monospace; }
 .site-progress > div:first-child { display: flex; justify-content: space-between; gap: 12px; }
 .site-progress-track { height: 4px; overflow: hidden; background: #e1e6de; border-radius: 2px; }
@@ -32,6 +36,10 @@
 .issue-list { padding: 10px 12px; background: #fff0ec; border-left: 3px solid var(--coral); color: #853b31; font-size: 11px; }
 .issue-list ul { margin: 7px 0 0; padding-left: 18px; line-height: 1.6; }
 .screenshot-links a { color: #536c23; font-size: 11px; }
+.website-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 0 0 12px; }
+.delete-button { padding: 8px 11px; border: 1px solid #e6b8ae; border-radius: 3px; background: #fff0ec; color: #9a392d; font-size: 11px; font-weight: 800; }
+.delete-button:disabled { cursor: not-allowed; opacity: .5; }
+.site-select { width: 16px; height: 16px; flex: none; margin: 0; accent-color: #a84337; cursor: pointer; }
 .run-progress { margin: -8px 0 28px; padding: 15px 18px; background: var(--panel); border: 1px solid var(--line); }
 .progress-heading { display: flex; align-items: center; gap: 14px; font-size: 12px; }
 .progress-heading strong { margin-right: auto; }
@@ -46,6 +54,9 @@
 .cancel-button { align-self: center; flex: none; padding: 11px 15px; border: 1px solid #c45a4b; border-radius: 4px; background: transparent; color: #a84337; font-weight: 700; }
 .cancel-button:hover:not(:disabled) { background: #ffe4df; }
 .cancel-button:disabled { cursor: wait; opacity: .65; }
+.secondary:disabled { cursor: wait; opacity: .75; }
+.button-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: button-spin .7s linear infinite; }
+@keyframes button-spin { to { transform: rotate(360deg); } }
 .badge.cancelled { color: #76524b; background: #f2e7e4; }
 @keyframes checking-pulse { 50% { opacity: .55; } }
 @media (max-width: 760px) { .site-entry.has-issues { padding-left: 7px; }.site-row { flex-wrap: wrap; }.site-info { flex-basis: calc(100% - 32px); }.details-button { margin-left: auto; }.site-progress { padding-left: 0; }.check-details { padding-left: 0; }.check-grid { grid-template-columns: 1fr; } }
