@@ -230,7 +230,7 @@ function App() {
         <span style={{ width: `${dashboard.stats.runProgress.percent}%` }}></span>
       </div>
       <p>{dashboard.stats.runProgress.processing} checking · {dashboard.stats.runProgress.queued} queued · {Math.max(0, dashboard.stats.runProgress.pending - dashboard.stats.runProgress.queued)} waiting</p>
-      {dashboard.stats.worker?.status !== 'online' && <p className="worker-help">Worker is offline. Start it with <code>npm run worker</code> in the web-monitor-client folder.</p>}
+      {dashboard.stats.worker?.status !== 'online' && <p className="worker-help">Worker is offline.</p>}
     </section>
     <section className="workspace">
       <div className="main-column">
