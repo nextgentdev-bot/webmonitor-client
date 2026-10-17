@@ -1,2 +1,2 @@
-html { min-width: 320px; }
+html { min-width: 320px; overflow-y: scroll; scrollbar-gutter: stable; }
 body { min-width: 320px; }
