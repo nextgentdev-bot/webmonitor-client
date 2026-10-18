@@ -113,6 +113,7 @@ function App() {
   const [showPassword, setShowPassword] = useState(false)
   const [dashboard, setDashboard] = useState({ websites: [], stats: { total: 0, active: 0, latestRun: null, runProgress: { status: 'idle', total: 0, completed: 0, processing: 0, pending: 0, queued: 0, cancelled: 0, percent: 0 }, worker: { status: 'offline' } } })
   const [query, setQuery] = useState('')
+  const searchInputRef = useRef(null)
   const [form, setForm] = useState({ name: '', url: '' })
   const [addingWebsite, setAddingWebsite] = useState(false)
   const [bulk, setBulk] = useState('')
@@ -261,10 +262,11 @@ function App() {
 
   async function addWebsite(event) {
     event.preventDefault()
+    const submittedForm = { ...form }
+    setForm({ name: '', url: '' })
     setAddingWebsite(true)
     try {
-      await request('/websites', { method: 'POST', body: JSON.stringify(form) })
-      setForm({ name: '', url: '' })
+      await request('/websites', { method: 'POST', body: JSON.stringify(submittedForm) })
       setToolsOpen(false)
       notifySuccess('Website added.')
       await loadDashboard()
@@ -363,13 +365,14 @@ function App() {
 
   async function importUrls(event) {
     event.preventDefault()
+    const submittedUrls = bulk
+    setBulk('')
     setImportingUrls(true)
     try {
-      const preview = await request('/import/preview', { method: 'POST', body: JSON.stringify({ urls: bulk }) })
+      const preview = await request('/import/preview', { method: 'POST', body: JSON.stringify({ urls: submittedUrls }) })
       const rows = preview.rows.filter((row) => row.valid)
       if (!rows.length) throw new Error('No new valid URLs found.')
       await request('/import/commit', { method: 'POST', body: JSON.stringify({ rows }) })
-      setBulk('')
       setToolsOpen(false)
       const refreshed = await loadDashboard()
       if (refreshed) notifySuccess(`${rows.length} websites imported.`)
@@ -378,14 +381,15 @@ function App() {
 
   async function importSheet(event) {
     event.preventDefault()
+    const submittedSheetUrl = sheetUrl
+    setSheetUrl('')
     setSheetImportStatus('fetching')
     try {
-      const preview = await request('/import/google-sheet/preview', { method: 'POST', body: JSON.stringify({ url: sheetUrl }) })
+      const preview = await request('/import/google-sheet/preview', { method: 'POST', body: JSON.stringify({ url: submittedSheetUrl }) })
       const rows = preview.rows.filter((row) => row.valid)
       if (!rows.length) throw new Error(`No valid website URLs found in Google Sheets tab "${preview.tab}" (${preview.sourceCount} rows read). Add a URL column or check the selected tab.`)
       setSheetImportStatus('saving')
       const result = await request('/import/google-sheet/commit', { method: 'POST', body: JSON.stringify({ rows }) })
-      setSheetUrl('')
       setToolsOpen(false)
       const refreshed = await loadDashboard()
       if (refreshed) notifySuccess(`Read ${preview.sourceCount} rows from tab "${preview.tab}". Added ${result.added} new websites and synced ${result.updated} existing websites.`)
@@ -433,7 +437,10 @@ function App() {
       <div className="main-column">
         <div className="section-heading">
           <div><p className="eyebrow">INVENTORY</p><h2>Websites</h2></div>
-          <input className="search" value={query} onChange={(event) => { setQuery(event.target.value); loadDashboard(event.target.value) }} placeholder="Search sites..." />
+          <div className="search-field">
+            <input ref={searchInputRef} className="search" type="search" value={query} onChange={(event) => { setQuery(event.target.value); loadDashboard(event.target.value) }} placeholder="Search sites..." aria-label="Search sites" />
+            {query && <button className="search-clear" type="button" aria-label="Clear search" onClick={() => { setQuery(''); loadDashboard(''); searchInputRef.current?.focus() }}>×</button>}
+          </div>
         </div>
         <div className="website-actions">
           <label className="select-all-control">
@@ -525,7 +532,7 @@ function App() {
         </aside>
       </div>
     </section>
-    <button className="tools-fab" type="button" aria-label="Add or import sites" aria-haspopup="dialog" aria-expanded={toolsOpen} aria-controls="site-tools" onClick={() => setToolsOpen(true)}>
+    <button className="tools-fab" type="button" aria-label={toolsOpen ? 'Close add and import sites' : 'Add or import sites'} aria-haspopup="dialog" aria-expanded={toolsOpen} aria-controls="site-tools" onClick={() => setToolsOpen((open) => !open)}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
     </button>
     <ConfirmationDialog
