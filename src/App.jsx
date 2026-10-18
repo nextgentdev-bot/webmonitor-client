@@ -128,6 +128,40 @@ function App() {
   const [toolsOpen, setToolsOpen] = useState(false)
   const [confirmation, setConfirmation] = useState(null)
   const confirmationResolver = useRef(null)
+  const toolsCloseButtonRef = useRef(null)
+
+  useEffect(() => {
+    if (!toolsOpen) return undefined
+    const previouslyFocused = document.activeElement
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    toolsCloseButtonRef.current?.focus()
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setToolsOpen(false)
+      if (event.key === 'Tab') {
+        const dialog = toolsCloseButtonRef.current?.closest('.side-column')
+        const focusableElements = dialog?.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')
+        if (!focusableElements?.length) return
+        const first = focusableElements[0]
+        const last = focusableElements[focusableElements.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+    }
+  }, [toolsOpen])
 
   function askForConfirmation(details) {
     return new Promise((resolve) => {
@@ -231,6 +265,7 @@ function App() {
     try {
       await request('/websites', { method: 'POST', body: JSON.stringify(form) })
       setForm({ name: '', url: '' })
+      setToolsOpen(false)
       notifySuccess('Website added.')
       await loadDashboard()
     } catch (error) { notifyError(error.message) } finally { setAddingWebsite(false) }
@@ -335,6 +370,7 @@ function App() {
       if (!rows.length) throw new Error('No new valid URLs found.')
       await request('/import/commit', { method: 'POST', body: JSON.stringify({ rows }) })
       setBulk('')
+      setToolsOpen(false)
       const refreshed = await loadDashboard()
       if (refreshed) notifySuccess(`${rows.length} websites imported.`)
     } catch (error) { notifyError(error.message) } finally { setImportingUrls(false) }
@@ -350,6 +386,7 @@ function App() {
       setSheetImportStatus('saving')
       const result = await request('/import/google-sheet/commit', { method: 'POST', body: JSON.stringify({ rows }) })
       setSheetUrl('')
+      setToolsOpen(false)
       const refreshed = await loadDashboard()
       if (refreshed) notifySuccess(`Read ${preview.sourceCount} rows from tab "${preview.tab}". Added ${result.added} new websites and synced ${result.updated} existing websites.`)
     } catch (error) { notifyError(error.message) } finally { setSheetImportStatus('') }
@@ -393,7 +430,6 @@ function App() {
       {dashboard.stats.worker?.status !== 'online' && <p className="worker-help">Worker is offline.</p>}
     </section>
     <section className="workspace">
-      <button className="tools-menu-toggle" type="button" aria-expanded={toolsOpen} aria-controls="site-tools" onClick={() => setToolsOpen((open) => !open)}>{toolsOpen ? 'Close tools' : 'Add / import sites'}<span aria-hidden="true">{toolsOpen ? '−' : '+'}</span></button>
       <div className="main-column">
         <div className="section-heading">
           <div><p className="eyebrow">INVENTORY</p><h2>Websites</h2></div>
@@ -474,12 +510,24 @@ function App() {
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
         </div>
       </div>
-      <aside className={`side-column ${toolsOpen ? 'tools-open' : ''}`} id="site-tools">
-        <section className="tool-panel"><p className="eyebrow">ADD SITE</p><h2>New watch</h2><form onSubmit={addWebsite} aria-busy={addingWebsite}><input placeholder="Display name (optional)" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={addingWebsite} /><input required placeholder="https://example.com" value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} disabled={addingWebsite} /><button className="primary" type="submit" disabled={addingWebsite} aria-busy={addingWebsite}>{addingWebsite && <span className="button-spinner" aria-hidden="true" />}{addingWebsite ? 'Adding website...' : 'Add website'}</button></form></section>
-        <section className="tool-panel"><p className="eyebrow">BULK IMPORT</p><h2>Paste URLs</h2><form onSubmit={importUrls} aria-busy={importingUrls}><textarea rows="5" placeholder={'One URL per line\nName | https://example.com'} value={bulk} onChange={(event) => setBulk(event.target.value)} disabled={importingUrls} /><button className="secondary" type="submit" disabled={importingUrls} aria-busy={importingUrls}>{importingUrls && <span className="button-spinner" aria-hidden="true" />}{importingUrls ? 'Importing websites...' : 'Import valid URLs'}</button></form></section>
-        <section className="tool-panel"><p className="eyebrow">GOOGLE SHEETS</p><h2>Import a sheet</h2><form onSubmit={importSheet} aria-busy={Boolean(sheetImportStatus)}><input required type="url" placeholder="Paste Google Sheet URL" value={sheetUrl} onChange={(event) => setSheetUrl(event.target.value)} disabled={Boolean(sheetImportStatus)} /><small className="muted">Set sharing to Anyone with the link, Viewer. Add a gid to choose a tab. Without a gid, the “All site(s)” tab is preferred; otherwise the first tab is used.</small><button className="secondary" type="submit" disabled={Boolean(sheetImportStatus)} aria-busy={Boolean(sheetImportStatus)}>{sheetImportStatus && <span className="button-spinner" aria-hidden="true" />}{sheetImportStatus === 'fetching' ? 'Reading Google Sheet...' : sheetImportStatus === 'saving' ? 'Adding websites...' : 'Import from Google Sheet'}</button></form></section>
-      </aside>
+      <div className={`tools-modal-backdrop ${toolsOpen ? 'tools-open' : ''}`} onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setToolsOpen(false)
+      }}>
+        <aside className="side-column" id="site-tools" role={toolsOpen ? 'dialog' : 'complementary'} aria-label={toolsOpen ? undefined : 'Site tools'} aria-modal={toolsOpen || undefined} aria-labelledby={toolsOpen ? 'tools-modal-title' : undefined} onMouseDown={(event) => event.stopPropagation()}>
+          <span className="tools-modal-handle" aria-hidden="true" />
+          <div className="tools-modal-heading">
+            <h2 id="tools-modal-title">Add / import sites</h2>
+            <button className="tools-modal-close" type="button" ref={toolsCloseButtonRef} aria-label="Close add and import sites" onClick={() => setToolsOpen(false)}>×</button>
+          </div>
+          <section className="tool-panel"><p className="eyebrow">ADD SITE</p><h2>New watch</h2><form onSubmit={addWebsite} aria-busy={addingWebsite}><input placeholder="Display name (optional)" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={addingWebsite} /><input required placeholder="https://example.com" value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} disabled={addingWebsite} /><button className="primary" type="submit" disabled={addingWebsite} aria-busy={addingWebsite}>{addingWebsite && <span className="button-spinner" aria-hidden="true" />}{addingWebsite ? 'Adding website...' : 'Add website'}</button></form></section>
+          <section className="tool-panel"><p className="eyebrow">BULK IMPORT</p><h2>Paste URLs</h2><form onSubmit={importUrls} aria-busy={importingUrls}><textarea rows="5" placeholder={'One URL per line\nName | https://example.com'} value={bulk} onChange={(event) => setBulk(event.target.value)} disabled={importingUrls} /><button className="secondary" type="submit" disabled={importingUrls} aria-busy={importingUrls}>{importingUrls && <span className="button-spinner" aria-hidden="true" />}{importingUrls ? 'Importing websites...' : 'Import valid URLs'}</button></form></section>
+          <section className="tool-panel"><p className="eyebrow">GOOGLE SHEETS</p><h2>Import a sheet</h2><form onSubmit={importSheet} aria-busy={Boolean(sheetImportStatus)}><input required type="url" placeholder="Paste Google Sheet URL" value={sheetUrl} onChange={(event) => setSheetUrl(event.target.value)} disabled={Boolean(sheetImportStatus)} /><small className="muted">Set sharing to Anyone with the link, Viewer. Add a gid to choose a tab. Without a gid, the “All site(s)” tab is preferred; otherwise the first tab is used.</small><button className="secondary" type="submit" disabled={Boolean(sheetImportStatus)} aria-busy={Boolean(sheetImportStatus)}>{sheetImportStatus && <span className="button-spinner" aria-hidden="true" />}{sheetImportStatus === 'fetching' ? 'Reading Google Sheet...' : sheetImportStatus === 'saving' ? 'Adding websites...' : 'Import from Google Sheet'}</button></form></section>
+        </aside>
+      </div>
     </section>
+    <button className="tools-fab" type="button" aria-label="Add or import sites" aria-haspopup="dialog" aria-expanded={toolsOpen} aria-controls="site-tools" onClick={() => setToolsOpen(true)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+    </button>
     <ConfirmationDialog
       confirmation={confirmation}
       onConfirm={() => resolveConfirmation(true)}
