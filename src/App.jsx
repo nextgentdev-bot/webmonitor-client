@@ -418,18 +418,18 @@ function App() {
     const availableBelow = Math.max(0, viewportHeight - triggerRect.bottom - gutter)
     const availableAbove = Math.max(0, triggerRect.top - gutter)
     const preferredHeight = Math.min(390, viewportHeight - gutter * 2)
+    const mobileDialogHeight = Math.min(mobileHeight, 270)
     const openAbove = availableBelow < Math.min(preferredHeight, 340) && availableAbove > availableBelow
     const top = mobile
-      ? (viewportHeight - mobileHeight) / 2
+      ? (viewportHeight - mobileDialogHeight) / 2
       : openAbove
         ? Math.max(gutter, triggerRect.top - Math.min(preferredHeight, availableAbove))
         : triggerRect.bottom
-    const height = mobile ? mobileHeight : undefined
     const maxHeight = mobile
       ? mobileHeight
       : Math.max(0, Math.min(640, openAbove ? availableAbove : availableBelow))
 
-    setSiteMenuPosition({ top, left, width: dialogWidth, ...(height ? { height } : {}), maxHeight })
+    setSiteMenuPosition({ top, left, width: dialogWidth, maxHeight })
     setSiteMenuClosing(false)
     setOpenSiteMenuId(websiteId)
   }
