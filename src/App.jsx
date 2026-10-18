@@ -41,17 +41,41 @@ function CheckResult({ label, result }) {
   </div>
 }
 
+function issueCategory(issue) {
+  if (issue.startsWith('Main website returned HTTP')) return 'Homepage returned an HTTP error'
+  if (issue.startsWith('Main website appears blank')) return 'Homepage appears blank'
+  if (issue.startsWith('Main website is slow')) return 'Homepage is slow'
+  if (issue.startsWith('Main website could not be opened')) return 'Homepage could not be opened'
+  const menuIssue = issue.match(/^(Desktop|Mobile) (Contact|News):/)
+  if (menuIssue) {
+    const device = menuIssue[1]
+    const section = menuIssue[2].toLowerCase()
+    return issue.includes('Not added.')
+      ? `${device} ${section} link is missing`
+      : `${device} ${section} link has an error`
+  }
+  return issue
+}
+
 function CheckReport({ websites, loading }) {
-  const [filter, setFilter] = useState('all')
+  const [issueFilter, setIssueFilter] = useState('')
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
     const currentCheck = website.active ? website.currentCheck : null
     const issues = check?.issues || []
     const status = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
-    return { website, check, currentCheck, issues, status, index }
+    const issueCategories = [...new Set(issues.map(issueCategory))]
+    return { website, check, currentCheck, issues, issueCategories, status, index }
   })
   const issueRows = rows.filter(({ status, issues }) => !['healthy', 'paused', 'not-checked', 'processing', 'pending', 'cancelled'].includes(status) || issues.length > 0)
-  const visibleRows = filter === 'issues' ? issueRows : rows
+  const issueCategories = [...new Set(rows.flatMap(({ issueCategories: categories }) => categories))].sort((first, second) => first.localeCompare(second))
+  const categoryCounts = new Map(issueCategories.map((category) => [
+    category,
+    rows.filter(({ issueCategories: categories }) => categories.includes(category)).length
+  ]))
+  const visibleRows = issueFilter
+    ? rows.filter(({ issueCategories: categories }) => categories.includes(issueFilter))
+    : rows
   const healthyCount = rows.filter(({ status }) => status === 'healthy').length
   const issueCount = issueRows.length
   const uncheckedCount = rows.filter(({ status }) => status === 'not-checked').length
@@ -71,10 +95,13 @@ function CheckReport({ websites, loading }) {
       <div><span>Not checked</span><strong>{uncheckedCount}</strong></div>
     </div>
     <div className="results-toolbar">
-      <div className="results-filters" role="group" aria-label="Filter website results">
-        <button className={filter === 'all' ? 'selected' : ''} type="button" onClick={() => setFilter('all')}>All results <span>{rows.length}</span></button>
-        <button className={filter === 'issues' ? 'selected' : ''} type="button" onClick={() => setFilter('issues')}>Issues only <span>{issueCount}</span></button>
-      </div>
+      <label className="issue-filter-control">
+        <span>Filter by issue</span>
+        <select value={issueFilter} onChange={(event) => setIssueFilter(event.target.value)} aria-label="Filter websites by issue type">
+          <option value="">All results ({rows.length})</option>
+          {issueCategories.map((category) => <option value={category} key={category}>{category} ({categoryCounts.get(category)})</option>)}
+        </select>
+      </label>
       <span className="results-updated">Live from latest checks</span>
     </div>
     <div className="results-list">
@@ -116,7 +143,7 @@ function CheckReport({ websites, loading }) {
           </div>
         </article>
       })}
-      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{filter === 'issues' ? 'No websites currently have reported issues.' : 'No websites to show.'}</p>}
+      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{issueFilter ? `No websites currently have this issue: ${issueFilter}.` : 'No websites to show.'}</p>}
     </div>
   </section>
 }
