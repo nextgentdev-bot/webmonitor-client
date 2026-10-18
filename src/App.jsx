@@ -57,7 +57,7 @@ function issueCategory(issue) {
   return issue
 }
 
-function CheckReport({ websites, loading }) {
+function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions }) {
   const [issueFilter, setIssueFilter] = useState('')
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
@@ -115,6 +115,9 @@ function CheckReport({ websites, loading }) {
           <div className="results-site">
             <span className="results-index">{String(index + 1).padStart(2, '0')}</span>
             <div><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
+            <button className="site-menu-trigger results-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={openSiteMenuId === website._id} onClick={(event) => openSiteMenuId === website._id ? closeWebsiteActions() : onOpenActions(event, website._id)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
+            </button>
           </div>
           <div className="results-data">
             <div className="results-status-line">
@@ -293,15 +296,24 @@ function App() {
     }
 
     function preventBackgroundScroll(event) {
+      if (document.documentElement.clientWidth > 760) return
       if (event.target instanceof Element && event.target.closest('.site-actions-list')) return
       event.preventDefault()
     }
 
+    function closeOnOutsidePointer(event) {
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('.site-actions-dialog, [data-site-menu-trigger]')) return
+      setSiteMenuClosing(true)
+    }
+
     document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
     document.addEventListener('wheel', preventBackgroundScroll, { capture: true, passive: false })
     document.addEventListener('touchmove', preventBackgroundScroll, { capture: true, passive: false })
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
       document.removeEventListener('wheel', preventBackgroundScroll, true)
       document.removeEventListener('touchmove', preventBackgroundScroll, true)
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
@@ -527,7 +539,7 @@ function App() {
     const viewportHeight = window.visualViewport?.height || window.innerHeight
     const mobile = viewportWidth <= 760
     const gutter = 16
-    const dialogWidth = Math.min(mobile ? 440 : 380, viewportWidth - gutter * 2)
+    const dialogWidth = Math.min(mobile ? 440 : 320, viewportWidth - gutter * 2)
     const mobileHeight = Math.min(viewportHeight * 0.8, 600)
     const left = mobile
       ? (viewportWidth - dialogWidth) / 2
@@ -789,6 +801,8 @@ function App() {
           })}
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
         </div>
+        </>}
+        {resultsView && <CheckReport websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
         {activeMenuWebsite && siteMenuPosition && <div className={`site-actions-backdrop ${siteMenuClosing ? 'is-closing' : ''}`} onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeWebsiteActions()
         }} onWheelCapture={(event) => {
@@ -796,7 +810,7 @@ function App() {
         }} onTouchMoveCapture={(event) => {
           if (!event.target.closest('.site-actions-list')) event.preventDefault()
         }}>
-          <section className="site-actions-dialog" style={siteMenuPosition} role="dialog" aria-modal="true" aria-labelledby="site-actions-title" aria-describedby="site-actions-url">
+          <section className="site-actions-dialog" style={siteMenuPosition} role="dialog" aria-labelledby="site-actions-title" aria-describedby="site-actions-url">
             <header className="site-actions-heading">
               <div className="site-actions-title-group">
                 <span className="site-actions-number" aria-label={`Website ${activeMenuWebsiteNumber}`}>#{String(activeMenuWebsiteNumber).padStart(2, '0')}</span>
@@ -813,8 +827,6 @@ function App() {
             </nav>
           </section>
         </div>}
-        </>}
-        {resultsView && <CheckReport websites={dashboard.websites} loading={loading} />}
       </div>
       <div className={`tools-modal-backdrop ${toolsOpen ? 'tools-open' : ''}`} onMouseDown={(event) => {
         if (event.target === event.currentTarget) setToolsOpen(false)
