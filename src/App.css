@@ -19,7 +19,53 @@
 .site-progress-track span { display: block; height: 100%; background: #8bb432; border-radius: inherit; transition: width .35s ease; }
 .site-progress-track span.in-progress { background: #74a72d; }
 .issue-count { color: #a84337; font: 10px 'DM Mono', monospace; white-space: nowrap; }
-.details-button { flex: none; background: transparent; color: var(--muted); font-size: 11px; padding: 6px 4px; text-decoration: underline; text-underline-offset: 3px; }
+.details-button { flex: none; margin-left: 0; background: transparent; color: var(--muted); font-size: 11px; padding: 6px 4px; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.site-actions-menu { position: relative; flex: none; }
+.site-menu-trigger { display: grid; place-items: center; width: 24px; height: 30px; padding: 0; background: transparent; color: #455650; transition: color .14s ease, transform .14s ease; }
+.site-menu-trigger:hover, .site-menu-trigger[aria-expanded="true"] { color: var(--ink); transform: scale(1.08); }
+.site-menu-trigger svg { width: 20px; height: 24px; fill: currentColor; }
+.site-menu-trigger:focus-visible { outline: 2px solid #8bb432; outline-offset: 1px; }
+.site-actions-backdrop { position: fixed; inset: 0; z-index: 1200; overflow: hidden; background: rgba(23, 33, 31, .28); overscroll-behavior: none; animation: site-actions-fade-in .16s ease-out; }
+.site-actions-backdrop.is-closing { pointer-events: none; animation: site-actions-fade-out .16s ease-in forwards; }
+.site-actions-dialog { position: fixed; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 12px 32px rgba(23, 33, 31, .2); animation: site-actions-enter .18s cubic-bezier(.2, .8, .2, 1); }
+.site-actions-backdrop.is-closing .site-actions-dialog { animation: site-actions-exit .16s ease-in forwards; }
+.site-actions-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; flex: none; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.site-actions-heading > div { min-width: 0; }
+.site-actions-heading .site-actions-title-group { display: flex; align-items: center; gap: 12px; }
+.site-actions-number { display: grid; place-items: center; flex: none; min-width: 40px; height: 30px; padding: 0 7px; border-left: 2px solid #8bb432; background: #edf2e4; color: #52634d; font: 600 11px 'DM Mono', monospace; letter-spacing: .02em; }
+.site-actions-heading h2 { overflow: hidden; margin: 0 0 4px; font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.site-actions-heading p { overflow: hidden; margin: 0; color: var(--muted); font: 10px 'DM Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.site-actions-close { display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; background: #edf0e8; color: var(--ink); font-size: 25px; line-height: 1; transition: background-color .14s ease; }
+.site-actions-close:hover { background: #dfe6d6; }
+.site-actions-close:focus-visible, .site-actions-list a:focus-visible, .site-actions-list button:focus-visible { outline: 2px solid #8bb432; outline-offset: -2px; }
+.site-actions-list { display: grid; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding: 6px; }
+.site-actions-list a, .site-actions-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.35; text-align: left; text-decoration: none; }
+.site-actions-list a:hover, .site-actions-list button:hover:not(:disabled) { background: #edf0e8; }
+.site-actions-list .site-action-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.site-actions-list .danger { color: #a84337; }
+.site-actions-list button:disabled { cursor: not-allowed; opacity: .55; }
+@media (max-width: 760px) {
+  .site-actions-backdrop { background: rgba(23, 33, 31, .38); }
+  .site-actions-dialog { border-color: #d1d8cf; box-shadow: 0 18px 48px rgba(23, 33, 31, .26); }
+  .site-actions-heading { gap: 10px; padding: 13px 14px; background: linear-gradient(110deg, #fffdf7, #f6f8ef); }
+  .site-actions-heading .site-actions-title-group { gap: 10px; flex: 1; }
+  .site-actions-number { min-width: 38px; height: 28px; padding-inline: 5px; font-size: 10px; }
+  .site-actions-heading h2 { font-size: 14px; }
+  .site-actions-heading p { font-size: 9px; }
+  .site-actions-close { width: 32px; height: 32px; font-size: 22px; }
+  .site-actions-list { align-content: center; gap: 3px; padding: 9px 10px; }
+  .site-actions-list a, .site-actions-list button { min-height: 44px; padding: 9px 11px; font-size: 13px; }
+  .site-actions-list a, .site-actions-list button:not(.danger) { border-bottom: 1px solid rgba(217, 222, 215, .55); }
+  .site-actions-list .site-action-icon { width: 17px; height: 17px; }
+  .site-actions-list .danger { margin-top: 3px; border-top: 1px solid #f0d8d2; }
+}
+@keyframes site-actions-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes site-actions-fade-out { to { opacity: 0; } }
+@keyframes site-actions-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes site-actions-exit { to { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .site-actions-backdrop, .site-actions-dialog, .site-actions-backdrop.is-closing .site-actions-dialog { animation: none; }
+}
 .check-details { display: grid; gap: 12px; padding: 0 0 18px 21px; }
 .check-meta { color: var(--muted); font: 10px 'DM Mono', monospace; }
 .check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -324,6 +370,11 @@
   .tools-modal-backdrop .tool-panel textarea { font-size: 14px; }
   .tools-modal-backdrop .tool-panel small.muted { font-size: 11px; line-height: 1.5; }
   .tools-modal-backdrop .tool-panel button { font-size: 12px; }
+  .site-entry .site-row { position: relative; padding-right: 42px; }
+  .site-entry .site-actions-menu { position: absolute; top: 7px; right: 0; }
+  .site-entry .details-button { margin-left: 0; }
+  .site-entry .site-menu-trigger { width: 24px; height: 30px; }
+  .site-entry .site-menu-trigger svg { width: 21px; height: 25px; }
 }
 .stats {
   display: grid;

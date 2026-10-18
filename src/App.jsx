@@ -52,6 +52,19 @@ function SiteListSkeleton() {
   </div>
 }
 
+function SiteActionIcon({ name }) {
+  const icons = {
+    open: <><path d="M14 4h6v6" /><path d="m20 4-9 9" /><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" /></>,
+    check: <><path d="M20 7v5h-5" /><path d="M19 12a7 7 0 1 1-2-5" /></>,
+    copy: <><rect x="8" y="8" width="12" height="12" rx="1" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></>,
+    pause: <><path d="M8 5v14M16 5v14" /></>,
+    play: <path d="m8 5 11 7-11 7V5Z" />,
+    delete: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="m6 7 1 13h10l1-13M9 7V4h6v3" /></>
+  }
+
+  return <svg className="site-action-icon" viewBox="0 0 24 24" aria-hidden="true">{icons[name]}</svg>
+}
+
 function ConfirmationDialog({ confirmation, onConfirm, onCancel }) {
   const cancelButtonRef = useRef(null)
   const confirmButtonRef = useRef(null)
@@ -127,9 +140,65 @@ function App() {
   const progressRequestActive = useRef(false)
   const [cancelingRun, setCancelingRun] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [openSiteMenuId, setOpenSiteMenuId] = useState(null)
+  const [siteMenuClosing, setSiteMenuClosing] = useState(false)
+  const [siteMenuPosition, setSiteMenuPosition] = useState(null)
+  const [runningWebsiteId, setRunningWebsiteId] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
   const confirmationResolver = useRef(null)
   const toolsCloseButtonRef = useRef(null)
+  const siteMenuCloseButtonRef = useRef(null)
+
+  useEffect(() => {
+    if (!siteMenuClosing || !openSiteMenuId) return undefined
+    const timeoutId = window.setTimeout(() => {
+      setOpenSiteMenuId(null)
+      setSiteMenuClosing(false)
+    }, 160)
+    return () => window.clearTimeout(timeoutId)
+  }, [siteMenuClosing, openSiteMenuId])
+
+  useEffect(() => {
+    if (!openSiteMenuId) return undefined
+    const previouslyFocused = document.activeElement
+    siteMenuCloseButtonRef.current?.focus()
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setSiteMenuClosing(true)
+      }
+      if (event.key === 'Tab') {
+        const dialog = siteMenuCloseButtonRef.current?.closest('.site-actions-dialog')
+        const focusableElements = dialog?.querySelectorAll('button:not(:disabled), a[href]')
+        if (!focusableElements?.length) return
+        const first = focusableElements[0]
+        const last = focusableElements[focusableElements.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    function preventBackgroundScroll(event) {
+      if (event.target instanceof Element && event.target.closest('.site-actions-list')) return
+      event.preventDefault()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('wheel', preventBackgroundScroll, { capture: true, passive: false })
+    document.addEventListener('touchmove', preventBackgroundScroll, { capture: true, passive: false })
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('wheel', preventBackgroundScroll, true)
+      document.removeEventListener('touchmove', preventBackgroundScroll, true)
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+    }
+  }, [openSiteMenuId])
 
   useEffect(() => {
     if (!toolsOpen) return undefined
@@ -274,6 +343,7 @@ function App() {
   }
 
   async function toggleWebsite(website) {
+    setOpenSiteMenuId(null)
     const active = !website.active
     setDashboard((current) => ({
       ...current,
@@ -293,6 +363,83 @@ function App() {
       notifyError(error.message)
     }
   }
+
+  async function deleteWebsite(website) {
+    setOpenSiteMenuId(null)
+    const confirmed = await askForConfirmation({
+      title: `Delete ${website.name}?`,
+      description: 'This website and its check history will be permanently deleted. This action cannot be undone.',
+      confirmLabel: 'Delete website',
+      danger: true
+    })
+    if (!confirmed) return
+    setDeletingWebsites(true)
+    try {
+      await request(`/websites/${website._id}`, { method: 'DELETE' })
+      setSelectedWebsiteIds((current) => current.filter((id) => id !== website._id))
+      setExpandedWebsiteId((current) => current === website._id ? null : current)
+      notifySuccess(`${website.name} deleted.`)
+      await loadDashboard()
+    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false) }
+  }
+
+  async function runWebsiteCheck(website) {
+    setOpenSiteMenuId(null)
+    setRunningWebsiteId(website._id)
+    try {
+      const result = await request('/runs', { method: 'POST', body: JSON.stringify({ type: 'manual', websiteIds: [website._id] }) })
+      if (result.created) notifySuccess(`Check queued for ${website.name}.`)
+      else notifyError(result.reason)
+      await loadDashboard()
+    } catch (error) { notifyError(error.message) } finally { setRunningWebsiteId(null) }
+  }
+
+  async function copyWebsiteUrl(website) {
+    setOpenSiteMenuId(null)
+    try {
+      await navigator.clipboard.writeText(website.url)
+      notifySuccess('Website URL copied.')
+    } catch (error) {
+      notifyError(error.message || 'Could not copy website URL.')
+    }
+  }
+
+  function openWebsiteActions(event, websiteId) {
+    const triggerRect = event.currentTarget.getBoundingClientRect()
+    const viewportWidth = document.documentElement.clientWidth
+    const viewportHeight = window.visualViewport?.height || window.innerHeight
+    const mobile = viewportWidth <= 760
+    const gutter = 16
+    const dialogWidth = Math.min(mobile ? 440 : 380, viewportWidth - gutter * 2)
+    const mobileHeight = Math.min(viewportHeight * 0.8, 600)
+    const left = mobile
+      ? (viewportWidth - dialogWidth) / 2
+      : Math.max(gutter, Math.min(triggerRect.right - dialogWidth, viewportWidth - dialogWidth - gutter))
+    const availableBelow = Math.max(0, viewportHeight - triggerRect.bottom - gutter)
+    const availableAbove = Math.max(0, triggerRect.top - gutter)
+    const preferredHeight = Math.min(390, viewportHeight - gutter * 2)
+    const openAbove = availableBelow < Math.min(preferredHeight, 340) && availableAbove > availableBelow
+    const top = mobile
+      ? (viewportHeight - mobileHeight) / 2
+      : openAbove
+        ? Math.max(gutter, triggerRect.top - Math.min(preferredHeight, availableAbove))
+        : triggerRect.bottom
+    const height = mobile ? mobileHeight : undefined
+    const maxHeight = mobile
+      ? mobileHeight
+      : Math.max(0, Math.min(640, openAbove ? availableAbove : availableBelow))
+
+    setSiteMenuPosition({ top, left, width: dialogWidth, ...(height ? { height } : {}), maxHeight })
+    setSiteMenuClosing(false)
+    setOpenSiteMenuId(websiteId)
+  }
+
+  function closeWebsiteActions() {
+    setSiteMenuClosing(true)
+  }
+
+  const activeMenuWebsite = dashboard.websites.find((website) => website._id === openSiteMenuId)
+  const activeMenuWebsiteNumber = dashboard.websites.findIndex((website) => website._id === openSiteMenuId) + 1
 
   function toggleWebsiteSelection(id) {
     setSelectedWebsiteIds((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id])
@@ -481,8 +628,12 @@ function App() {
                 <div className="site-info"><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
                 <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>
                 {!website.active ? <span className="issue-count neutral">0 issues</span> : issues.length > 0 && <span className="issue-count">{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span>}
-                <button className="details-button" aria-expanded={isExpanded} onClick={() => setExpandedWebsiteId(isExpanded ? null : website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
-                <button className="icon-button" title={website.active ? 'Pause website' : 'Activate website'} onClick={() => toggleWebsite(website)}>{website.active ? 'Ⅱ' : '▶'}</button>
+                <button className="details-button" type="button" aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'View'} results for ${website.name}`} onClick={() => setExpandedWebsiteId(isExpanded ? null : website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
+                <div className="site-actions-menu">
+                  <button className="site-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={openSiteMenuId === website._id} onClick={(event) => openSiteMenuId === website._id ? closeWebsiteActions() : openWebsiteActions(event, website._id)}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
+                  </button>
+                </div>
               </div>
               <div className="site-progress">
                 <div><span>{rowStage}</span><span>{rowPercent}%</span></div>
@@ -516,6 +667,30 @@ function App() {
           })}
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
         </div>
+        {activeMenuWebsite && siteMenuPosition && <div className={`site-actions-backdrop ${siteMenuClosing ? 'is-closing' : ''}`} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeWebsiteActions()
+        }} onWheelCapture={(event) => {
+          if (!event.target.closest('.site-actions-list')) event.preventDefault()
+        }} onTouchMoveCapture={(event) => {
+          if (!event.target.closest('.site-actions-list')) event.preventDefault()
+        }}>
+          <section className="site-actions-dialog" style={siteMenuPosition} role="dialog" aria-modal="true" aria-labelledby="site-actions-title" aria-describedby="site-actions-url">
+            <header className="site-actions-heading">
+              <div className="site-actions-title-group">
+                <span className="site-actions-number" aria-label={`Website ${activeMenuWebsiteNumber}`}>#{String(activeMenuWebsiteNumber).padStart(2, '0')}</span>
+                <div><h2 id="site-actions-title">{activeMenuWebsite.name}</h2><p id="site-actions-url">{activeMenuWebsite.url}</p></div>
+              </div>
+              <button className="site-actions-close" type="button" ref={siteMenuCloseButtonRef} aria-label="Close website actions" onClick={closeWebsiteActions}>×</button>
+            </header>
+            <nav className="site-actions-list" aria-label="Website actions">
+              <a href={activeMenuWebsite.url} target="_blank" rel="noreferrer" onClick={() => setOpenSiteMenuId(null)}><SiteActionIcon name="open" />Open website</a>
+              <button type="button" onClick={() => runWebsiteCheck(activeMenuWebsite)} disabled={!activeMenuWebsite.active || dashboard.stats.worker?.status !== 'online' || runningWebsiteId === activeMenuWebsite._id}><SiteActionIcon name="check" />{runningWebsiteId === activeMenuWebsite._id ? 'Queueing check...' : 'Run check now'}</button>
+              <button type="button" onClick={() => copyWebsiteUrl(activeMenuWebsite)}><SiteActionIcon name="copy" />Copy URL</button>
+              <button type="button" onClick={() => toggleWebsite(activeMenuWebsite)}><SiteActionIcon name={activeMenuWebsite.active ? 'pause' : 'play'} />{activeMenuWebsite.active ? 'Pause monitoring' : 'Resume monitoring'}</button>
+              <button className="danger" type="button" onClick={() => deleteWebsite(activeMenuWebsite)} disabled={deletingWebsites}><SiteActionIcon name="delete" />Delete website</button>
+            </nav>
+          </section>
+        </div>}
       </div>
       <div className={`tools-modal-backdrop ${toolsOpen ? 'tools-open' : ''}`} onMouseDown={(event) => {
         if (event.target === event.currentTarget) setToolsOpen(false)
