@@ -41,6 +41,86 @@ function CheckResult({ label, result }) {
   </div>
 }
 
+function CheckReport({ websites, loading }) {
+  const [filter, setFilter] = useState('all')
+  const rows = websites.map((website, index) => {
+    const check = website.active ? website.lastCheck : null
+    const currentCheck = website.active ? website.currentCheck : null
+    const issues = check?.issues || []
+    const status = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
+    return { website, check, currentCheck, issues, status, index }
+  })
+  const issueRows = rows.filter(({ status, issues }) => !['healthy', 'paused', 'not-checked', 'processing', 'pending', 'cancelled'].includes(status) || issues.length > 0)
+  const visibleRows = filter === 'issues' ? issueRows : rows
+  const healthyCount = rows.filter(({ status }) => status === 'healthy').length
+  const issueCount = issueRows.length
+  const uncheckedCount = rows.filter(({ status }) => status === 'not-checked').length
+
+  return <section className="results-report" id="check-results" aria-labelledby="results-title">
+    <div className="results-heading">
+      <div>
+        <p className="eyebrow">LATEST CHECKS / ALL RUN TYPES</p>
+        <h2 id="results-title">Website results</h2>
+        <p className="muted">Latest result per website, including run all, selected runs, and individual checks.</p>
+      </div>
+      <span className="results-total">{rows.length} {rows.length === 1 ? 'website' : 'websites'}</span>
+    </div>
+    <div className="results-summary" aria-label="Result summary">
+      <div><span>Healthy</span><strong>{healthyCount}</strong></div>
+      <div className={issueCount ? 'has-issues' : ''}><span>Needs attention</span><strong>{issueCount}</strong></div>
+      <div><span>Not checked</span><strong>{uncheckedCount}</strong></div>
+    </div>
+    <div className="results-toolbar">
+      <div className="results-filters" role="group" aria-label="Filter website results">
+        <button className={filter === 'all' ? 'selected' : ''} type="button" onClick={() => setFilter('all')}>All results <span>{rows.length}</span></button>
+        <button className={filter === 'issues' ? 'selected' : ''} type="button" onClick={() => setFilter('issues')}>Issues only <span>{issueCount}</span></button>
+      </div>
+      <span className="results-updated">Live from latest checks</span>
+    </div>
+    <div className="results-list">
+      {loading ? <p className="results-empty-state">Loading latest website results...</p> : visibleRows.map(({ website, check, currentCheck, issues, status, index }) => {
+        const statusLabel = status === 'not-checked' ? 'Not checked' : status === 'processing' ? 'Checking' : status === 'pending' ? 'Queued' : status
+        const statusClass = status === 'processing' ? 'checking' : status === 'pending' ? 'queued' : ['healthy', 'warning', 'critical', 'paused', 'cancelled'].includes(status) ? status : 'pending'
+        const homepageIssue = issues.some((issue) => issue.startsWith('Main website'))
+        const homepageStatus = homepageIssue ? (!check?.homepage?.statusCode || check.homepage.statusCode >= 500 || check.homepage.sslValid === false ? 'error' : 'warning') : 'working'
+
+        return <article className={`results-row ${status === 'critical' || status === 'warning' ? 'has-issues' : ''}`} key={website._id}>
+          <div className="results-site">
+            <span className="results-index">{String(index + 1).padStart(2, '0')}</span>
+            <div><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
+          </div>
+          <div className="results-data">
+            <div className="results-status-line">
+              <span className={`badge ${statusClass}`}>{statusLabel}</span>
+              <span className="results-checked">{check?.finishedAt ? `Checked ${new Date(check.finishedAt).toLocaleString()}` : currentCheck?.status === 'processing' ? 'Check in progress' : 'No completed check yet'}</span>
+            </div>
+            {check ? <>
+              <div className="check-grid results-check-grid">
+                <div className="check-result">
+                  <div className="check-result-heading"><strong>Homepage</strong><span className={`result-status ${homepageStatus}`}>{check.homepage?.statusCode ? `HTTP ${check.homepage.statusCode}` : 'Unavailable'}</span></div>
+                  <small>Load: {check.homepage?.loadTimeMs != null ? `${check.homepage.loadTimeMs} ms` : 'Not measured'}</small>
+                  <small>SSL: {check.homepage?.sslValid === true ? 'Valid' : check.homepage?.sslValid === false ? 'Invalid' : 'Unknown'}</small>
+                  <small>Content: {check.homepage?.blank === true ? 'Possibly blank' : check.homepage?.blank === false ? 'Present' : 'Unknown'}</small>
+                </div>
+                <CheckResult label="Desktop contact" result={check.desktop?.contact} />
+                <CheckResult label="Desktop news" result={check.desktop?.news} />
+                <CheckResult label="Mobile contact" result={check.mobile?.contact} />
+                <CheckResult label="Mobile news" result={check.mobile?.news} />
+              </div>
+              <div className={`results-issues ${issues.length ? 'has-issues' : ''}`}>
+                <strong>{issues.length ? `${issues.length} ${issues.length === 1 ? 'issue' : 'issues'} found` : 'No issues found'}</strong>
+                {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issueIndex}-${issue}`}>{issue}</li>)}</ul>}
+              </div>
+              {check.screenshots?.length > 0 && <div className="screenshot-links">{check.screenshots.map((image) => <a href={image} target="_blank" rel="noreferrer" key={image}>Open issue screenshot</a>)}</div>}
+            </> : <p className="results-empty">{website.active ? currentCheck?.status === 'processing' ? 'The latest check is running; detailed results will appear when it finishes.' : 'No check has been run for this website yet.' : 'Monitoring is paused.'}</p>}
+          </div>
+        </article>
+      })}
+      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{filter === 'issues' ? 'No websites currently have reported issues.' : 'No websites to show.'}</p>}
+    </div>
+  </section>
+}
+
 function SiteListSkeleton() {
   return <div className="site-list-skeleton" role="status" aria-label="Loading websites">
     {Array.from({ length: 4 }, (_, index) => <div className="site-skeleton" key={index} aria-hidden="true">
@@ -137,6 +217,7 @@ function App() {
   const [selectedWebsiteIds, setSelectedWebsiteIds] = useState([])
   const [deletingWebsites, setDeletingWebsites] = useState(false)
   const [expandedWebsiteId, setExpandedWebsiteId] = useState(null)
+  const [resultsView, setResultsView] = useState(() => window.location.hash === '#check-results')
   const progressRequestActive = useRef(false)
   const [cancelingRun, setCancelingRun] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -261,6 +342,15 @@ function App() {
   async function loadDashboard(search = query) {
     if (!token) return
     try { setDashboard(await request(`/dashboard?search=${encodeURIComponent(search)}`)); return true } catch (error) { notifyError(error.message); return false } finally { setLoading(false) }
+  }
+
+  function navigateResultsView(showResults) {
+    setResultsView(showResults)
+    window.history.replaceState(null, '', showResults ? '#check-results' : '#websites')
+    if (showResults && query) {
+      setQuery('')
+      loadDashboard('')
+    }
   }
 
   // The token is the external session boundary for this dashboard.
@@ -558,16 +648,20 @@ function App() {
 
   return <main className="app-shell">
     <header className="topbar">
-      <div><p className="eyebrow">WEBSITE MONITOR / CONTROL ROOM</p><h1>Signal desk</h1></div>
-      <div className="top-actions"><span className={`live-dot ${dashboard.stats.worker?.status === 'online' ? '' : 'worker-offline'}`}>● Worker {dashboard.stats.worker?.status || 'offline'}</span><button className="ghost" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button></div>
+      <div><p className="eyebrow">{resultsView ? 'WEBSITE MONITOR / RESULTS REPORT' : 'WEBSITE MONITOR / CONTROL ROOM'}</p><h1>{resultsView ? 'Check results' : 'Signal desk'}</h1></div>
+      <div className="top-actions">
+        <span className={`live-dot ${dashboard.stats.worker?.status === 'online' ? '' : 'worker-offline'}`}>● Worker {dashboard.stats.worker?.status || 'offline'}</span>
+        <a className="results-nav-link" href={resultsView ? '#websites' : '#check-results'} onClick={(event) => { event.preventDefault(); navigateResultsView(!resultsView) }}>{resultsView ? 'Websites' : 'Check results'}</a>
+        <button className="ghost" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button>
+      </div>
     </header>
-    <section className="stats">
+    {!resultsView && <section className="stats">
       <div><span>Tracked sites</span><strong>{dashboard.stats.total}</strong></div>
       <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
       <div><span>Healthy sites</span><strong>{dashboard.stats.healthy || 0}</strong></div>
       <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'}>{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
       {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
-    </section>
+    </section>}
     <section className="run-progress" aria-label="Website check progress">
       <div className="progress-heading">
         <strong>{dashboard.stats.runProgress.status === 'running' ? 'Checking websites' : dashboard.stats.runProgress.status === 'cancelled' ? 'Last run cancelled' : dashboard.stats.runProgress.status === 'completed' ? 'All websites checked' : 'Website check progress'}</strong>
@@ -582,6 +676,7 @@ function App() {
     </section>
     <section className="workspace">
       <div className="main-column">
+        {!resultsView && <>
         <div className="section-heading">
           <div><p className="eyebrow">INVENTORY</p><h2>Websites</h2></div>
           <div className="search-field">
@@ -691,6 +786,8 @@ function App() {
             </nav>
           </section>
         </div>}
+        </>}
+        {resultsView && <CheckReport websites={dashboard.websites} loading={loading} />}
       </div>
       <div className={`tools-modal-backdrop ${toolsOpen ? 'tools-open' : ''}`} onMouseDown={(event) => {
         if (event.target === event.currentTarget) setToolsOpen(false)
