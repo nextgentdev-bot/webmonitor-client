@@ -629,9 +629,12 @@ function App() {
   useEffect(() => {
     if (!token) return undefined
     const isRunning = dashboard.stats.runProgress?.status === 'running'
-    if (isRunning) pollRunProgress()
-    const intervalId = window.setInterval(pollRunProgress, isRunning ? 1500 : 3000)
-    return () => window.clearInterval(intervalId)
+    const initialTimeoutId = isRunning ? window.setTimeout(() => { void pollRunProgress() }, 0) : null
+    const intervalId = window.setInterval(() => { void pollRunProgress() }, isRunning ? 1500 : 3000)
+    return () => {
+      if (initialTimeoutId !== null) window.clearTimeout(initialTimeoutId)
+      window.clearInterval(intervalId)
+    }
   }, [token, dashboard.stats.runProgress?.status, dashboard.stats.runProgress?.runId])
 
   async function login(event) {
@@ -1020,16 +1023,17 @@ function App() {
         <a href="#websites" className={!resultsView ? 'active' : ''} aria-current={!resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(false) }}>Websites</a>
         <a href="#check-results" className={resultsView ? 'active' : ''} aria-current={resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(true) }}>Check results</a>
       </nav>
-      <div className="compact-nav-details" aria-label="Important monitoring summary">
-        <span className="compact-health"><i />{dashboard.stats.healthy || 0} healthy</span>
-        <span className="compact-attention"><i />{dashboard.websites.filter((website) => ['warning', 'critical'].includes(website.lastCheck?.status)).length} attention</span>
-        <span className="compact-progress"><b>{dashboard.stats.runProgress?.percent || 0}%</b><span><i style={{ width: `${dashboard.stats.runProgress?.percent || 0}%` }} /></span></span>
-      </div>
       <div className="top-actions">
+        <span className={`live-dot ${dashboard.stats.worker?.status === 'online' ? '' : 'worker-offline'}`}><span className="live-pulse" aria-hidden="true" /><span><span className="live-label">Worker </span>{dashboard.stats.worker?.status || 'offline'}</span></span>
         <button className="theme-toggle" type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>
           {theme === 'dark' ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>}
         </button>
         <button className="ghost sign-out" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button>
+      </div>
+      <div className="compact-nav-details" aria-label="Important monitoring summary">
+        <span className="compact-health"><i />{dashboard.stats.healthy || 0} healthy</span>
+        <span className="compact-attention"><i />{dashboard.websites.filter((website) => ['warning', 'critical'].includes(website.lastCheck?.status)).length} attention</span>
+        <span className="compact-progress"><b>{dashboard.stats.runProgress?.percent || 0}%</b><span><i style={{ width: `${dashboard.stats.runProgress?.percent || 0}%` }} /></span></span>
       </div>
     </header>
     {!resultsView && <section className="stats">
