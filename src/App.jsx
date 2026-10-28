@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { summarizeIssue } from './issueSummary.js'
 import './App.css'
@@ -76,7 +76,7 @@ function issueCategory(issue) {
   return null
 }
 
-function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions }) {
+const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions }) {
   const [issueFilter, setIssueFilter] = useState('')
   const [summaryFilter, setSummaryFilter] = useState('')
   const rows = websites.map((website, index) => {
@@ -204,7 +204,82 @@ function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWe
       {!loading && visibleRows.length === 0 && <p className="results-empty-state">{issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : 'No websites to show.'}</p>}
     </div>
   </section>
+})
+
+// Keep the same object for websites whose data did not change, so memoized rows skip re-rendering.
+function reuseWebsites(previous, next) {
+  const previousById = new Map(previous.map((website) => [website._id, website]))
+  let changed = previous.length !== next.length
+  const merged = next.map((website, position) => {
+    const old = previousById.get(website._id)
+    if (old && JSON.stringify(old) === JSON.stringify(website)) {
+      if (previous[position] !== old) changed = true
+      return old
+    }
+    changed = true
+    return website
+  })
+  return changed ? merged : previous
 }
+
+const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isExpanded, menuOpen, deleting, onToggleSelect, onToggleExpand, onOpenActions, onCloseActions }) {
+  const check = website.active ? website.lastCheck : null
+  const currentCheck = website.active ? website.currentCheck : null
+  const issues = website.active ? check?.issues || [] : []
+  const homepageIssue = issues.some((issue) => issue.startsWith('Main website'))
+  const homepageCritical = !check?.homepage?.statusCode || check.homepage.statusCode >= 500 || check.homepage.sslValid === false
+  const homepageStatus = homepageIssue ? (homepageCritical ? 'error' : 'warning') : 'working'
+  const rowStatus = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
+  const rowStatusLabel = rowStatus === 'processing' ? 'Checking' : rowStatus === 'pending' ? 'Queued' : rowStatus === 'cancelled' ? 'Cancelled' : rowStatus === 'not-checked' ? 'Not checked' : rowStatus === 'paused' ? 'Paused' : rowStatus.charAt(0).toUpperCase() + rowStatus.slice(1)
+  const rowStatusClass = rowStatus === 'processing' ? 'checking' : rowStatus === 'pending' ? 'queued' : rowStatus
+  const rowPercent = website.active ? ['healthy', 'warning', 'critical'].includes(rowStatus) ? 100 : ['processing', 'cancelled'].includes(rowStatus) ? currentCheck.progressPercent : 0 : 0
+  const rowStage = !website.active ? 'Paused' : currentCheck?.progressStage || (rowPercent === 100 ? 'Complete' : rowStatus === 'not-checked' ? 'Not started' : rowStatusLabel)
+  return <article className={`site-entry ${website.active && (check?.status === 'warning' || check?.status === 'critical') ? 'has-issues' : ''}`} key={website._id}>
+    <div className="site-row">
+      <input className="site-select" type="checkbox" aria-label={`Select ${website.name}`} checked={selected} onChange={() => onToggleSelect(website._id)} disabled={deleting} />
+      <span className="site-number" aria-label={`Website ${index + 1}`}>{index + 1}</span>
+      <span className={`status ${website.active ? 'active' : 'paused'}`}></span>
+      <div className="site-info"><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
+      <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>
+      <CheckStrip check={check} homepageStatus={homepageStatus} />
+      {!website.active ? <span className="issue-count neutral">0 issues</span> : issues.length > 0 ? <span className="issue-count">{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span> : <span className="issue-count" aria-hidden="true" />}
+      <button className="details-button" type="button" aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'View'} results for ${website.name}`} onClick={() => onToggleExpand(website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
+      <div className="site-actions-menu">
+        <button className="site-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={menuOpen} onClick={(event) => menuOpen ? onCloseActions() : onOpenActions(event, website._id)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
+        </button>
+      </div>
+    </div>
+    <div className={`site-progress ${['processing', 'pending'].includes(rowStatus) ? 'is-active' : ''}`}>
+      <div><span>{rowStage}</span><span>{rowPercent}%</span></div>
+      <div className="site-progress-track" role="progressbar" aria-label={`${website.name} check progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={rowPercent}>
+        <span className={rowStatus === 'processing' ? 'in-progress' : ''} style={{ width: `${rowPercent}%` }}></span>
+      </div>
+    </div>
+    {isExpanded && <section className="check-details" aria-label={`${website.name} latest check results`}>
+      {!website.active ? <p className="muted">Monitoring is paused. Previous results are cleared from this site summary.</p> : !check ? <p className="muted">No check has been run for this website yet.</p> : <>
+        <div className="check-meta">{check.finishedAt ? `Checked ${new Date(check.finishedAt).toLocaleString()}` : 'Check is still running'}</div>
+        <div className="check-grid">
+          <div className="check-result">
+            <div className="check-result-heading"><strong>Homepage</strong><span className={`result-status ${homepageStatus}`}>{check.homepage?.statusCode ? `HTTP ${check.homepage.statusCode}` : 'Unavailable'}</span></div>
+            <small>Load: {check.homepage?.loadTimeMs != null ? `${check.homepage.loadTimeMs} ms` : 'Not measured'}</small>
+            <small>SSL: {check.homepage?.sslValid === true ? 'Valid' : check.homepage?.sslValid === false ? 'Invalid' : 'Unknown'}</small>
+            <small>Content: {check.homepage?.blank === true ? 'Possibly blank' : check.homepage?.blank === false ? 'Present' : 'Unknown'}</small>
+          </div>
+          <CheckResult label="Desktop Contact" result={check.desktop?.contact} />
+          <CheckResult label="Desktop News" result={check.desktop?.news} />
+          <CheckResult label="Mobile Contact" result={check.mobile?.contact} />
+          <CheckResult label="Mobile News" result={check.mobile?.news} />
+        </div>
+        <div className="issue-list">
+          <strong>{issues.length ? 'Issues found' : 'No issues found'}</strong>
+          {issues.length > 0 && <ul>{issues.map((issue, index) => <li key={`${index}-${issue}`}>{summarizeIssue(issue)}</li>)}</ul>}
+        </div>
+        {check.screenshots?.length > 0 && <div className="screenshot-links">{check.screenshots.map((image) => <a href={image} target="_blank" rel="noreferrer" key={image}>Open issue screenshot</a>)}</div>}
+      </>}
+    </section>}
+  </article>
+})
 
 function SiteListSkeleton() {
   return <div className="site-list-skeleton" role="status" aria-label="Loading websites">
@@ -313,6 +388,8 @@ function App() {
   const progressSignatureRef = useRef('')
   const [cancelingRun, setCancelingRun] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
+  const topbarWrapRef = useRef(null)
+  const floatBarRef = useRef(null)
   const [openSiteMenuId, setOpenSiteMenuId] = useState(null)
   const [siteMenuClosing, setSiteMenuClosing] = useState(false)
   const [siteMenuPosition, setSiteMenuPosition] = useState(null)
@@ -323,6 +400,23 @@ function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('monitor_theme', theme)
   }, [theme])
+
+  // Show the floating navbar only while the normal navbar is scrolled out of view.
+  // IntersectionObserver + direct DOM updates: no scroll listener and no React re-render.
+  useEffect(() => {
+    const wrap = topbarWrapRef.current
+    const bar = floatBarRef.current
+    if (!token || !wrap || !bar) return undefined
+    bar.inert = true
+    const observer = new IntersectionObserver(([entry]) => {
+      const show = !entry.isIntersecting && entry.boundingClientRect.top < 0
+      bar.classList.toggle('is-visible', show)
+      bar.inert = !show
+      bar.setAttribute('aria-hidden', String(!show))
+    })
+    observer.observe(wrap)
+    return () => observer.disconnect()
+  }, [token])
   const toolsCloseButtonRef = useRef(null)
   const siteMenuCloseButtonRef = useRef(null)
 
@@ -451,7 +545,7 @@ function App() {
 
   async function loadDashboard(search = query) {
     if (!token) return
-    try { setDashboard(await request(`/dashboard?search=${encodeURIComponent(search)}`)); return true } catch (error) { notifyError(error.message); return false } finally { setLoading(false) }
+    try { const data = await request(`/dashboard?search=${encodeURIComponent(search)}`); setDashboard((current) => ({ ...data, websites: reuseWebsites(current.websites, data.websites) })); return true } catch (error) { notifyError(error.message); return false } finally { setLoading(false) }
   }
 
   function navigateResultsView(showResults) {
@@ -520,9 +614,9 @@ function App() {
       const progressChanged = progressSignatureRef.current !== progressSignature
       setDashboard((current) => ({
         ...current,
-        websites: current.websites.map((website) => website.active
+        websites: reuseWebsites(current.websites, current.websites.map((website) => website.active
           ? { ...website, currentCheck: checksByWebsite.get(website._id) || website.currentCheck }
-          : { ...website, currentCheck: null }),
+          : { ...website, currentCheck: null })),
         stats: { ...current.stats, runProgress: result }
       }))
       if (progressChanged || result.status !== 'running') {
@@ -651,7 +745,7 @@ function App() {
     }
   }
 
-  function openWebsiteActions(event, websiteId) {
+  const openWebsiteActions = useCallback((event, websiteId) => {
     const triggerRect = event.currentTarget.getBoundingClientRect()
     const viewportWidth = document.documentElement.clientWidth
     const viewportHeight = window.visualViewport?.height || window.innerHeight
@@ -685,18 +779,24 @@ function App() {
     setSiteMenuPosition({ top, left, width: dialogWidth, maxHeight })
     setSiteMenuClosing(false)
     setOpenSiteMenuId(websiteId)
-  }
+  }, [])
 
-  function closeWebsiteActions() {
+  const closeWebsiteActions = useCallback(() => {
     setSiteMenuClosing(true)
-  }
+  }, [])
 
   const activeMenuWebsite = dashboard.websites.find((website) => website._id === openSiteMenuId)
   const activeMenuWebsiteNumber = dashboard.websites.findIndex((website) => website._id === openSiteMenuId) + 1
 
-  function toggleWebsiteSelection(id) {
+  const toggleWebsiteSelection = useCallback((id) => {
     setSelectedWebsiteIds((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id])
-  }
+  }, [])
+
+  const toggleWebsiteExpanded = useCallback((id) => {
+    setExpandedWebsiteId((current) => current === id ? null : id)
+  }, [])
+
+  const selectedIdSet = new Set(selectedWebsiteIds)
 
   async function deleteSelectedWebsites() {
     if (!selectedWebsiteIds.length) return
@@ -892,6 +992,7 @@ function App() {
   </main>
 
   return <main className="app-shell">
+    <div className="topbar-wrap" ref={topbarWrapRef}>
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21" /></svg></span>
@@ -904,6 +1005,28 @@ function App() {
       <div className="top-actions">
         <span className={`live-dot ${dashboard.stats.worker?.status === 'online' ? '' : 'worker-offline'}`}><span className="live-pulse" aria-hidden="true" /><span><span className="live-label">Worker </span>{dashboard.stats.worker?.status || 'offline'}</span></span>
         <button className="theme-toggle" type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>
+          {theme === 'dark' ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>}
+        </button>
+        <button className="ghost sign-out" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button>
+      </div>
+    </header>
+    </div>
+    <header className="topbar-float" ref={floatBarRef} aria-hidden="true">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21" /></svg></span>
+        <span className="float-title">Web Monitor</span>
+      </div>
+      <nav className="top-nav" aria-label="Sections">
+        <a href="#websites" className={!resultsView ? 'active' : ''} aria-current={!resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(false) }}>Websites</a>
+        <a href="#check-results" className={resultsView ? 'active' : ''} aria-current={resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(true) }}>Check results</a>
+      </nav>
+      <div className="compact-nav-details" aria-label="Important monitoring summary">
+        <span className="compact-health"><i />{dashboard.stats.healthy || 0} healthy</span>
+        <span className="compact-attention"><i />{dashboard.websites.filter((website) => ['warning', 'critical'].includes(website.lastCheck?.status)).length} attention</span>
+        <span className="compact-progress"><b>{dashboard.stats.runProgress?.percent || 0}%</b><span><i style={{ width: `${dashboard.stats.runProgress?.percent || 0}%` }} /></span></span>
+      </div>
+      <div className="top-actions">
+        <button className="theme-toggle" type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>
           {theme === 'dark' ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>}
         </button>
         <button className="ghost sign-out" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button>
@@ -958,65 +1081,19 @@ function App() {
           <button className="delete-button" onClick={deleteAllWebsites} disabled={deletingWebsites}>{deletingWebsites ? 'Deleting...' : 'Delete all'}</button>
         </div>
         <div className="site-list">
-          {loading ? <SiteListSkeleton /> : dashboard.websites.map((website, index) => {
-            const check = website.active ? website.lastCheck : null
-            const currentCheck = website.active ? website.currentCheck : null
-            const issues = website.active ? check?.issues || [] : []
-            const homepageIssue = issues.some((issue) => issue.startsWith('Main website'))
-            const homepageCritical = !check?.homepage?.statusCode || check.homepage.statusCode >= 500 || check.homepage.sslValid === false
-            const homepageStatus = homepageIssue ? (homepageCritical ? 'error' : 'warning') : 'working'
-            const isExpanded = expandedWebsiteId === website._id
-            const rowStatus = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
-            const rowStatusLabel = rowStatus === 'processing' ? 'Checking' : rowStatus === 'pending' ? 'Queued' : rowStatus === 'cancelled' ? 'Cancelled' : rowStatus === 'not-checked' ? 'Not checked' : rowStatus === 'paused' ? 'Paused' : rowStatus.charAt(0).toUpperCase() + rowStatus.slice(1)
-            const rowStatusClass = rowStatus === 'processing' ? 'checking' : rowStatus === 'pending' ? 'queued' : rowStatus
-            const rowPercent = website.active ? ['healthy', 'warning', 'critical'].includes(rowStatus) ? 100 : ['processing', 'cancelled'].includes(rowStatus) ? currentCheck.progressPercent : 0 : 0
-            const rowStage = !website.active ? 'Paused' : currentCheck?.progressStage || (rowPercent === 100 ? 'Complete' : rowStatus === 'not-checked' ? 'Not started' : rowStatusLabel)
-            return <article className={`site-entry ${website.active && (check?.status === 'warning' || check?.status === 'critical') ? 'has-issues' : ''}`} key={website._id}>
-              <div className="site-row">
-                <input className="site-select" type="checkbox" aria-label={`Select ${website.name}`} checked={selectedWebsiteIds.includes(website._id)} onChange={() => toggleWebsiteSelection(website._id)} disabled={deletingWebsites} />
-                <span className="site-number" aria-label={`Website ${index + 1}`}>{index + 1}</span>
-                <span className={`status ${website.active ? 'active' : 'paused'}`}></span>
-                <div className="site-info"><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
-                <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>
-                <CheckStrip check={check} homepageStatus={homepageStatus} />
-                {!website.active ? <span className="issue-count neutral">0 issues</span> : issues.length > 0 ? <span className="issue-count">{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span> : <span className="issue-count" aria-hidden="true" />}
-                <button className="details-button" type="button" aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'View'} results for ${website.name}`} onClick={() => setExpandedWebsiteId(isExpanded ? null : website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
-                <div className="site-actions-menu">
-                  <button className="site-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={openSiteMenuId === website._id} onClick={(event) => openSiteMenuId === website._id ? closeWebsiteActions() : openWebsiteActions(event, website._id)}>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
-                  </button>
-                </div>
-              </div>
-              <div className={`site-progress ${['processing', 'pending'].includes(rowStatus) ? 'is-active' : ''}`}>
-                <div><span>{rowStage}</span><span>{rowPercent}%</span></div>
-                <div className="site-progress-track" role="progressbar" aria-label={`${website.name} check progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={rowPercent}>
-                  <span className={rowStatus === 'processing' ? 'in-progress' : ''} style={{ width: `${rowPercent}%` }}></span>
-                </div>
-              </div>
-              {isExpanded && <section className="check-details" aria-label={`${website.name} latest check results`}>
-                {!website.active ? <p className="muted">Monitoring is paused. Previous results are cleared from this site summary.</p> : !check ? <p className="muted">No check has been run for this website yet.</p> : <>
-                  <div className="check-meta">{check.finishedAt ? `Checked ${new Date(check.finishedAt).toLocaleString()}` : 'Check is still running'}</div>
-                  <div className="check-grid">
-                    <div className="check-result">
-                      <div className="check-result-heading"><strong>Homepage</strong><span className={`result-status ${homepageStatus}`}>{check.homepage?.statusCode ? `HTTP ${check.homepage.statusCode}` : 'Unavailable'}</span></div>
-                      <small>Load: {check.homepage?.loadTimeMs != null ? `${check.homepage.loadTimeMs} ms` : 'Not measured'}</small>
-                      <small>SSL: {check.homepage?.sslValid === true ? 'Valid' : check.homepage?.sslValid === false ? 'Invalid' : 'Unknown'}</small>
-                      <small>Content: {check.homepage?.blank === true ? 'Possibly blank' : check.homepage?.blank === false ? 'Present' : 'Unknown'}</small>
-                    </div>
-                    <CheckResult label="Desktop Contact" result={check.desktop?.contact} />
-                    <CheckResult label="Desktop News" result={check.desktop?.news} />
-                    <CheckResult label="Mobile Contact" result={check.mobile?.contact} />
-                    <CheckResult label="Mobile News" result={check.mobile?.news} />
-                  </div>
-                  <div className="issue-list">
-                    <strong>{issues.length ? 'Issues found' : 'No issues found'}</strong>
-                    {issues.length > 0 && <ul>{issues.map((issue, index) => <li key={`${index}-${issue}`}>{summarizeIssue(issue)}</li>)}</ul>}
-                  </div>
-                  {check.screenshots?.length > 0 && <div className="screenshot-links">{check.screenshots.map((image) => <a href={image} target="_blank" rel="noreferrer" key={image}>Open issue screenshot</a>)}</div>}
-                </>}
-              </section>}
-            </article>
-          })}
+          {loading ? <SiteListSkeleton /> : dashboard.websites.map((website, index) => <SiteRow
+            key={website._id}
+            website={website}
+            index={index}
+            selected={selectedIdSet.has(website._id)}
+            expanded={expandedWebsiteId === website._id}
+            menuOpen={openSiteMenuId === website._id}
+            deleting={deletingWebsites}
+            onToggleSelect={toggleWebsiteSelection}
+            onToggleExpand={toggleWebsiteExpanded}
+            onOpenActions={openWebsiteActions}
+            onCloseActions={closeWebsiteActions}
+          />)}
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
         </div>
         </>}
