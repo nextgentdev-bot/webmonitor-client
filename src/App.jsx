@@ -78,6 +78,7 @@ function issueCategory(issue) {
 
 function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions }) {
   const [issueFilter, setIssueFilter] = useState('')
+  const [summaryFilter, setSummaryFilter] = useState('')
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
     const currentCheck = website.active ? website.currentCheck : null
@@ -86,14 +87,20 @@ function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWe
     const issueTypes = [...new Set(issues.map(issueCategory).filter(Boolean))]
     return { website, check, currentCheck, issues, issueTypes, status, index }
   })
-  const issueRows = rows.filter(({ status, issues }) => !['healthy', 'paused', 'not-checked', 'processing', 'pending', 'cancelled'].includes(status) || issues.length > 0)
+  const issueRows = rows.filter(({ status, issues }) => ['warning', 'critical'].includes(status) || issues.length > 0)
   const categoryCounts = new Map(issueCategories.map((category) => [
     category,
     rows.filter(({ issueTypes }) => issueTypes.includes(category)).length
   ]))
   const visibleRows = issueFilter
     ? rows.filter(({ issueTypes }) => issueTypes.includes(issueFilter))
-    : rows
+    : summaryFilter === 'healthy'
+      ? rows.filter(({ status }) => status === 'healthy')
+      : summaryFilter === 'issues'
+        ? issueRows
+        : summaryFilter === 'not-checked'
+          ? rows.filter(({ status }) => status === 'not-checked')
+          : rows
   const healthyCount = rows.filter(({ status }) => status === 'healthy').length
   const issueCount = issueRows.length
   const uncheckedCount = rows.filter(({ status }) => status === 'not-checked').length
@@ -106,10 +113,16 @@ function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWe
       </div>
       <span className="results-total">{rows.length} {rows.length === 1 ? 'website' : 'websites'}</span>
     </div>
-    <div className="results-summary" aria-label="Result summary">
-      <div><span>Healthy</span><strong>{healthyCount}</strong></div>
-      <div className={issueCount ? 'has-issues' : ''}><span>Needs attention</span><strong>{issueCount}</strong></div>
-      <div><span>Not checked</span><strong>{uncheckedCount}</strong></div>
+    <div className="results-summary" aria-label="Result summary filters">
+      <button type="button" className={summaryFilter === 'healthy' ? 'active' : ''} aria-pressed={summaryFilter === 'healthy'} onClick={() => { setSummaryFilter((current) => current === 'healthy' ? '' : 'healthy'); setIssueFilter('') }}>
+        <span>Healthy</span><strong>{healthyCount}</strong>
+      </button>
+      <button type="button" className={`${issueCount ? 'has-issues ' : ''}${summaryFilter === 'issues' ? 'active' : ''}`} aria-pressed={summaryFilter === 'issues'} onClick={() => { setSummaryFilter((current) => current === 'issues' ? '' : 'issues'); setIssueFilter('') }}>
+        <span>Needs attention</span><strong>{issueCount}</strong>
+      </button>
+      <button type="button" className={summaryFilter === 'not-checked' ? 'active' : ''} aria-pressed={summaryFilter === 'not-checked'} onClick={() => { setSummaryFilter((current) => current === 'not-checked' ? '' : 'not-checked'); setIssueFilter('') }}>
+        <span>Not checked</span><strong>{uncheckedCount}</strong>
+      </button>
     </div>
     <div className="fleet-bar" role="img" aria-label={`${healthyCount} healthy, ${issueCount} need attention, ${Math.max(0, rows.length - healthyCount - issueCount)} other`}>
       <span className="ok" style={{ flexGrow: healthyCount }} />
@@ -119,7 +132,7 @@ function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWe
     <div className="results-toolbar">
       <label className="issue-filter-control">
         <span>Filter by issue</span>
-        <select value={issueFilter} onChange={(event) => setIssueFilter(event.target.value)} aria-label="Filter websites by issue type">
+        <select value={issueFilter} onChange={(event) => { setIssueFilter(event.target.value); setSummaryFilter('') }} aria-label="Filter websites by issue type">
           <option value="">All results ({rows.length})</option>
           {issueCategories.map((category) => <option value={category} key={category}>{category} ({categoryCounts.get(category)})</option>)}
         </select>
@@ -188,7 +201,7 @@ function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWe
           </div>
         </article>
       })}
-      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{issueFilter ? `No websites currently have this issue: ${issueFilter}.` : 'No websites to show.'}</p>}
+      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : 'No websites to show.'}</p>}
     </div>
   </section>
 }
