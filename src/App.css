@@ -176,12 +176,18 @@ input:disabled, textarea:disabled { opacity: .6; cursor: wait; }
 }
 .topbar-float .brand { flex: none; }
 .float-title { font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
-.topbar-float .top-actions { margin-left: 0; flex: none; }
-.compact-nav-details { display: flex; align-items: center; gap: 14px; margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.topbar-float > .top-nav { position: absolute; left: 50%; top: 50%; width: 260px; transform: translate(-50%, -50%); }
+.topbar-float > .top-nav a { flex: 1; text-align: center; }
+.topbar-float .top-actions { position: absolute; left: calc(50% + 150px); top: 50%; margin-left: 0; transform: translateY(-50%); flex: none; }
+.topbar-float .top-actions .live-label { display: none; }
+.topbar-float .top-actions .live-dot { margin-right: 0; padding-inline: 8px; }
+.topbar-float .top-actions .sign-out { padding-inline: 8px; }
+.compact-nav-details { position: absolute; right: 12px; top: 50%; display: flex; align-items: center; gap: 7px; transform: translateY(-50%); color: var(--muted); font-size: 11px; white-space: nowrap; }
 .compact-nav-details > span { display: inline-flex; align-items: center; gap: 6px; }
 .compact-nav-details i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .compact-attention i { background: var(--bad); }
-.compact-progress { min-width: 140px; }
+.compact-progress { min-width: 78px; }
+.compact-nav-details { gap: 6px; }
 .compact-progress b { min-width: 36px; color: var(--accent); font-weight: 500; font-variant-numeric: tabular-nums; }
 .compact-progress > span { display: block; flex: 1; height: 5px; overflow: hidden; background: var(--surface-3); border-radius: 99px; }
 .compact-progress > span i { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s ease; }
@@ -504,8 +510,13 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
   .results-check-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1350px) {
   .topbar-float .compact-nav-details { display: none; }
+}
+
+@media (min-width: 761px) and (max-width: 1040px) {
+  .topbar-float > .top-nav { width: 230px; }
+  .topbar-float .top-actions { left: calc(50% + 135px); }
 }
 
 @media (max-width: 860px) {
