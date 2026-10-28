@@ -310,6 +310,7 @@ function App() {
   const [expandedWebsiteId, setExpandedWebsiteId] = useState(null)
   const [resultsView, setResultsView] = useState(() => window.location.hash === '#check-results')
   const progressRequestActive = useRef(false)
+  const progressSignatureRef = useRef('')
   const [cancelingRun, setCancelingRun] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [openSiteMenuId, setOpenSiteMenuId] = useState(null)
@@ -515,6 +516,8 @@ function App() {
     try {
       const result = await request(`/runs/${runProgress.runId}/progress`)
       const checksByWebsite = new Map(result.checks.map((check) => [check.websiteId, check]))
+      const progressSignature = `${result.status}|${result.checks.map((check) => `${check.websiteId}:${check.status}:${check.progressStage}`).join('|')}`
+      const progressChanged = progressSignatureRef.current !== progressSignature
       setDashboard((current) => ({
         ...current,
         websites: current.websites.map((website) => website.active
@@ -522,15 +525,20 @@ function App() {
           : { ...website, currentCheck: null }),
         stats: { ...current.stats, runProgress: result }
       }))
-      if (result.status !== 'running') await loadDashboard(query)
+      if (progressChanged || result.status !== 'running') {
+        progressSignatureRef.current = progressSignature
+        await loadDashboard(query)
+      }
     } catch (error) { notifyError(error.message) } finally { progressRequestActive.current = false }
   })
 
   useEffect(() => {
     if (!token) return undefined
-    const intervalId = window.setInterval(pollRunProgress, 3000)
+    const isRunning = dashboard.stats.runProgress?.status === 'running'
+    if (isRunning) pollRunProgress()
+    const intervalId = window.setInterval(pollRunProgress, isRunning ? 1500 : 3000)
     return () => window.clearInterval(intervalId)
-  }, [token])
+  }, [token, dashboard.stats.runProgress?.status, dashboard.stats.runProgress?.runId])
 
   async function login(event) {
     event.preventDefault()
@@ -610,6 +618,14 @@ function App() {
   async function runWebsiteCheck(website) {
     setOpenSiteMenuId(null)
     setRunningWebsiteId(website._id)
+    progressSignatureRef.current = ''
+    setDashboard((current) => ({
+      ...current,
+      websites: current.websites.map((item) => item._id === website._id
+        ? { ...item, currentCheck: { status: 'pending', progressPercent: 0, progressStage: 'Queued', mobileProgressPercent: 0 } }
+        : item),
+      stats: { ...current.stats, runProgress: { status: 'running', total: 1, completed: 0, processing: 0, pending: 1, queued: 1, cancelled: 0, percent: 0 } }
+    }))
     if (googleSheetStatus?.spreadsheetUrl) {
       setGoogleSheetUrl(googleSheetStatus.spreadsheetUrl)
       setGoogleSheetMode('existing')
@@ -617,8 +633,10 @@ function App() {
     }
     try {
       const result = await request('/runs', { method: 'POST', body: JSON.stringify({ type: 'manual', websiteIds: [website._id] }) })
-      if (result.created) notifySuccess(`Check queued for ${website.name}.`)
-      else notifyError(result.reason)
+      if (result.created) {
+        notifySuccess(`Check queued for ${website.name}.`)
+        setDashboard((current) => ({ ...current, stats: { ...current.stats, runProgress: { ...current.stats.runProgress, runId: result.runId } } }))
+      } else notifyError(result.reason)
       await loadDashboard()
     } catch (error) { notifyError(error.message) } finally { setRunningWebsiteId(null) }
   }
@@ -717,17 +735,33 @@ function App() {
   }
 
   async function runAll() {
+    progressSignatureRef.current = ''
+    const selectedIds = [...selectedWebsiteIds]
+    const selectedSet = new Set(selectedIds)
+    const total = selectedIds.length || dashboard.websites.filter((website) => website.active).length
+    setDashboard((current) => ({
+      ...current,
+      websites: current.websites.map((website) => selectedIds.length
+        ? selectedSet.has(website._id)
+          ? { ...website, currentCheck: { status: 'pending', progressPercent: 0, progressStage: 'Queued', mobileProgressPercent: 0 } }
+          : website
+        : website.active
+          ? { ...website, currentCheck: { status: 'pending', progressPercent: 0, progressStage: 'Queued', mobileProgressPercent: 0 } }
+          : website),
+      stats: { ...current.stats, runProgress: { status: 'running', total, completed: 0, processing: 0, pending: total, queued: total, cancelled: 0, percent: 0 } }
+    }))
     if (googleSheetStatus?.spreadsheetUrl) {
       setGoogleSheetUrl(googleSheetStatus.spreadsheetUrl)
       setGoogleSheetMode('existing')
       setGoogleSheetSetupOpen(true)
     }
     try {
-      const selectedIds = [...selectedWebsiteIds]
       const selectedCount = selectedIds.length
       const result = await request('/runs', { method: 'POST', body: JSON.stringify({ type: 'manual', ...(selectedCount ? { websiteIds: selectedIds } : {}) }) })
-      if (result.created) notifySuccess(`Run queued for ${result.total} ${selectedCount ? 'selected ' : ''}websites.`)
-      else notifyError(result.reason)
+      if (result.created) {
+        notifySuccess(`Run queued for ${result.total} ${selectedCount ? 'selected ' : ''}websites.`)
+        setDashboard((current) => ({ ...current, stats: { ...current.stats, runProgress: { ...current.stats.runProgress, total: result.total, pending: result.total, queued: result.total, runId: result.runId } } }))
+      } else notifyError(result.reason)
       await loadDashboard()
     } catch (error) { notifyError(error.message) }
   }
@@ -876,15 +910,15 @@ function App() {
       </div>
     </header>
     {!resultsView && <section className="stats">
-      <div><span>Tracked sites</span><strong>{dashboard.stats.total}</strong></div>
-      <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
-      <div><span>Healthy sites</span><strong>{dashboard.stats.healthy || 0}</strong></div>
-      <div className="run-controls">
-      <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'}>{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
-      {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
-      </div>
-    </section>}
-    <section className="run-progress" aria-label="Website check progress">
+        <div><span>Tracked sites</span><strong>{dashboard.stats.total}</strong></div>
+        <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
+        <div><span>Healthy sites</span><strong>{dashboard.stats.healthy || 0}</strong></div>
+        <div className="run-controls">
+        <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'}>{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
+        {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
+        </div>
+      </section>}
+      <section className="run-progress" aria-label="Website check progress">
       <div className="progress-heading">
         <strong>{dashboard.stats.runProgress.status === 'running' ? 'Checking websites' : dashboard.stats.runProgress.status === 'cancelled' ? 'Last run cancelled' : dashboard.stats.runProgress.status === 'completed' ? 'All websites checked' : 'Website check progress'}</strong>
         <span>{dashboard.stats.runProgress.completed} of {dashboard.stats.runProgress.total} websites checked</span>
