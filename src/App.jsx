@@ -66,6 +66,26 @@ function CheckStrip({ check, homepageStatus }) {
   </span>
 }
 
+const websiteResultStatus = (website) => !website.active ? 'paused' : website.currentCheck?.status || website.lastCheck?.status || 'not-checked'
+
+function summarizeResults(websites) {
+  let healthy = 0, issues = 0, unchecked = 0
+  for (const website of websites) {
+    const status = websiteResultStatus(website)
+    const check = website.active ? website.lastCheck : null
+    if (status === 'healthy') healthy += 1
+    if (['warning', 'critical'].includes(status) || (check?.issues?.length || 0) > 0) issues += 1
+    if (status === 'not-checked') unchecked += 1
+  }
+  return { healthy, issues, unchecked }
+}
+
+function ThemeIcon({ theme }) {
+  return theme === 'dark'
+    ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg>
+    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>
+}
+
 const issueCategories = ['Homepage load time', 'Homepage availability', 'News', 'Contact']
 
 function issueCategory(issue) {
@@ -76,14 +96,12 @@ function issueCategory(issue) {
   return null
 }
 
-const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions }) {
-  const [issueFilter, setIssueFilter] = useState('')
-  const [summaryFilter, setSummaryFilter] = useState('')
+const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions, summaryFilter, setSummaryFilter, issueFilter, setIssueFilter }) {
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
     const currentCheck = website.active ? website.currentCheck : null
     const issues = check?.issues || []
-    const status = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
+    const status = websiteResultStatus(website)
     const issueTypes = [...new Set(issues.map(issueCategory).filter(Boolean))]
     return { website, check, currentCheck, issues, issueTypes, status, index }
   })
@@ -396,6 +414,9 @@ function App() {
   const [runningWebsiteId, setRunningWebsiteId] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
   const confirmationResolver = useRef(null)
+  const [summaryFilter, setSummaryFilter] = useState('')
+  const [issueFilter, setIssueFilter] = useState('')
+  const [navMenuOpen, setNavMenuOpen] = useState(false)
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('monitor_theme', theme)
@@ -412,11 +433,18 @@ function App() {
       const show = !entry.isIntersecting && entry.boundingClientRect.top < 0
       bar.classList.toggle('is-visible', show)
       bar.inert = !show
+      if (!show) setNavMenuOpen(false)
       bar.setAttribute('aria-hidden', String(!show))
     })
     observer.observe(wrap)
     return () => observer.disconnect()
   }, [token])
+  useEffect(() => {
+    if (!navMenuOpen) return undefined
+    const onKeyDown = (event) => { if (event.key === 'Escape') setNavMenuOpen(false) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [navMenuOpen])
   const toolsCloseButtonRef = useRef(null)
   const siteMenuCloseButtonRef = useRef(null)
 
@@ -555,6 +583,30 @@ function App() {
       setQuery('')
       loadDashboard('')
     }
+  }
+
+  function scrollToSection(id) {
+    window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+  }
+
+  function openResultsFilter(filter) {
+    const alreadyActive = resultsView && summaryFilter === filter
+    setSummaryFilter(alreadyActive ? '' : filter)
+    setIssueFilter('')
+    navigateResultsView(true)
+    setNavMenuOpen(false)
+    scrollToSection('check-results')
+  }
+
+  function openWebsitesView() {
+    navigateResultsView(false)
+    setNavMenuOpen(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function jumpToProgress() {
+    setNavMenuOpen(false)
+    scrollToSection('run-progress')
   }
 
   // The token is the external session boundary for this dashboard.
@@ -978,6 +1030,24 @@ function App() {
     }
   }
 
+  const nbCounts = summarizeResults(dashboard.websites)
+  const nbProgress = dashboard.stats.runProgress || {}
+  const nbWorkerOnline = dashboard.stats.worker?.status === 'online'
+  const nbRunning = nbProgress.status === 'running'
+  const nbRunDisabled = nbRunning || !nbWorkerOnline
+  const nbRunLabel = nbRunning ? nbWorkerOnline ? 'Checks running...' : 'Waiting for worker...' : !nbWorkerOnline ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'
+    const nbProgressDetail = `${nbProgress.processing || 0} checking · ${nbProgress.queued || 0} queued · ${Math.max(0, (nbProgress.pending || 0) - (nbProgress.queued || 0))} waiting`
+  const nbProgressTitle = nbProgress.status === 'running' ? 'Checking websites' : nbProgress.status === 'cancelled' ? 'Last run cancelled' : nbProgress.status === 'completed' ? 'All websites checked' : 'Website check progress'
+  const navStats = [
+    { key: 'tracked', label: 'Tracked', value: dashboard.stats.total, minor: true, title: 'Show all tracked websites', onClick: openWebsitesView },
+    { key: 'active', label: 'Active', value: dashboard.stats.active, minor: true, title: 'Show active websites', onClick: openWebsitesView },
+    { key: 'healthy', label: 'Healthy', value: nbCounts.healthy, tone: 'ok', title: 'Show healthy websites in Check results', pressed: resultsView && summaryFilter === 'healthy', onClick: () => openResultsFilter('healthy') },
+    { key: 'issues', label: 'Attention', value: nbCounts.issues, tone: 'bad', title: 'Show websites that need attention', pressed: resultsView && summaryFilter === 'issues', onClick: () => openResultsFilter('issues') },
+    { key: 'not-checked', label: 'Not checked', value: nbCounts.unchecked, minor: true, title: 'Show websites not checked yet', pressed: resultsView && summaryFilter === 'not-checked', onClick: () => openResultsFilter('not-checked') }
+  ]
+  const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark')
+  const signOut = () => { localStorage.removeItem('monitor_token'); setToken(null) }
+
   if (!token) return <main className="login-shell">
     <div className="login-panel">
       <button className="theme-toggle login-theme-toggle" type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>
@@ -1019,23 +1089,55 @@ function App() {
         <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21" /></svg></span>
         <span className="float-title">Web Monitor</span>
       </div>
+      <div className="nb-summary" role="group" aria-label="Monitoring summary">
+        {navStats.map((stat) => <button type="button" key={stat.key} className={`nb-stat${stat.tone ? ` ${stat.tone}` : ''}${stat.minor ? ' nb-minor' : ''}`} aria-pressed={stat.pressed === undefined ? undefined : stat.pressed} title={stat.title} onClick={stat.onClick}>
+          {stat.tone && <i aria-hidden="true" />}<strong>{stat.value}</strong><span>{stat.label}</span>
+        </button>)}
+        <button type="button" className="nb-progress" title={`${nbProgressDetail} (click to view progress)`} aria-label={`Check progress ${nbProgress.percent || 0}%. ${nbProgressDetail}`} onClick={jumpToProgress}>
+          <b>{nbProgress.percent || 0}%</b><span className="nb-bar"><i style={{ width: `${nbProgress.percent || 0}%` }} /></span>
+        </button>
+      </div>
       <nav className="top-nav" aria-label="Sections">
         <a href="#websites" className={!resultsView ? 'active' : ''} aria-current={!resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(false) }}>Websites</a>
         <a href="#check-results" className={resultsView ? 'active' : ''} aria-current={resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(true) }}>Check results</a>
       </nav>
-      <div className="top-actions">
-        <span className={`live-dot ${dashboard.stats.worker?.status === 'online' ? '' : 'worker-offline'}`}><span className="live-pulse" aria-hidden="true" /><span><span className="live-label">Worker </span>{dashboard.stats.worker?.status || 'offline'}</span></span>
-        <button className="theme-toggle" type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>
-          {theme === 'dark' ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>}
-        </button>
-        <button className="ghost sign-out" onClick={() => { localStorage.removeItem('monitor_token'); setToken(null) }}>Sign out</button>
+      <div className="nb-chips" aria-label="Quick status">
+        {navStats.filter((stat) => stat.tone).map((stat) => <button type="button" key={stat.key} className={`nb-chip ${stat.tone}`} aria-label={`${stat.value} ${stat.label}`} onClick={stat.onClick}><i aria-hidden="true" />{stat.value}</button>)}
       </div>
-      <div className="compact-nav-details" aria-label="Important monitoring summary">
-        <span className="compact-health"><i />{dashboard.stats.healthy || 0} healthy</span>
-        <span className="compact-attention"><i />{dashboard.websites.filter((website) => ['warning', 'critical'].includes(website.lastCheck?.status)).length} attention</span>
-        <span className="compact-progress"><b>{dashboard.stats.runProgress?.percent || 0}%</b><span><i style={{ width: `${dashboard.stats.runProgress?.percent || 0}%` }} /></span></span>
-      </div>
+      <button type="button" className="nb-burger" aria-label={navMenuOpen ? 'Close menu' : 'Open menu'} aria-expanded={navMenuOpen} aria-controls="nav-menu" onClick={() => setNavMenuOpen((open) => !open)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">{navMenuOpen ? <path d="M6 6l12 12M18 6 6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}</svg>
+      </button>
     </header>
+    {navMenuOpen && <>
+      <div className="nb-backdrop" onClick={() => setNavMenuOpen(false)} />
+      <div className="nb-menu" id="nav-menu" role="dialog" aria-label="Navigation menu">
+        <nav className="top-nav" aria-label="Sections">
+          <a href="#websites" className={!resultsView ? 'active' : ''} aria-current={!resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); openWebsitesView() }}>Websites</a>
+          <a href="#check-results" className={resultsView ? 'active' : ''} aria-current={resultsView ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigateResultsView(true); setNavMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Check results</a>
+        </nav>
+        <div className="nb-menu-head">
+          <span>Overview</span>
+          <span className={`live-dot ${nbWorkerOnline ? '' : 'worker-offline'}`}><span className="live-pulse" aria-hidden="true" /><span>Worker {dashboard.stats.worker?.status || 'offline'}</span></span>
+        </div>
+        <div className="nb-menu-grid">
+          {navStats.map((stat) => <button type="button" key={stat.key} className={`nb-tile${stat.tone ? ` ${stat.tone}` : ''}`} aria-pressed={stat.pressed === undefined ? undefined : stat.pressed} onClick={stat.onClick}>
+            <span>{stat.tone && <i aria-hidden="true" />}{stat.label}</span><strong>{stat.value}</strong>
+          </button>)}
+        </div>
+        <button type="button" className="nb-menu-progress" onClick={jumpToProgress}>
+          <span className="nb-menu-progress-top"><span>{nbProgressTitle}</span><b>{nbProgress.percent || 0}%</b></span>
+          <span className="nb-bar"><i style={{ width: `${nbProgress.percent || 0}%` }} /></span>
+          <small>{nbProgress.completed || 0} of {nbProgress.total || 0} websites checked</small>
+          <small>{nbProgressDetail}</small>
+        </button>
+        <button type="button" className="primary nb-menu-run" onClick={() => { setNavMenuOpen(false); runAll() }} disabled={nbRunDisabled}>{nbRunLabel}</button>
+        {nbRunning && <button type="button" className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
+        <div className="nb-menu-footer">
+          <button type="button" className="nb-menu-btn" onClick={toggleTheme}><ThemeIcon theme={theme} />{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
+          <button type="button" className="nb-menu-btn" onClick={signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M16 8l4 4-4 4M20 12H9" /></svg>Sign out</button>
+        </div>
+      </div>
+    </>}
     {!resultsView && <section className="stats">
         <div><span>Tracked sites</span><strong>{dashboard.stats.total}</strong></div>
         <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
@@ -1045,7 +1147,7 @@ function App() {
         {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
         </div>
       </section>}
-      <section className="run-progress" aria-label="Website check progress">
+      <section className="run-progress" id="run-progress" aria-label="Website check progress">
       <div className="progress-heading">
         <strong>{dashboard.stats.runProgress.status === 'running' ? 'Checking websites' : dashboard.stats.runProgress.status === 'cancelled' ? 'Last run cancelled' : dashboard.stats.runProgress.status === 'completed' ? 'All websites checked' : 'Website check progress'}</strong>
         <span>{dashboard.stats.runProgress.completed} of {dashboard.stats.runProgress.total} websites checked</span>
@@ -1101,7 +1203,7 @@ function App() {
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
         </div>
         </>}
-        {resultsView && <CheckReport websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
+        {resultsView && <CheckReport summaryFilter={summaryFilter} setSummaryFilter={setSummaryFilter} issueFilter={issueFilter} setIssueFilter={setIssueFilter} websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
         {activeMenuWebsite && siteMenuPosition && <div className={`site-actions-backdrop ${siteMenuClosing ? 'is-closing' : ''}`} onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeWebsiteActions()
         }} onWheelCapture={(event) => {
@@ -1109,7 +1211,7 @@ function App() {
         }} onTouchMoveCapture={(event) => {
           if (!event.target.closest('.site-actions-list')) event.preventDefault()
         }}>
-          <section className="site-actions-dialog" style={siteMenuPosition} role="dialog" aria-labelledby="site-actions-title" aria-describedby="site-actions-url">
+          <section className="site-actions-dialog" role="dialog" aria-modal="true" aria-labelledby="site-actions-title" aria-describedby="site-actions-url">
             <header className="site-actions-heading">
               <div className="site-actions-title-group">
                 <span className="site-actions-number" aria-label={`Website ${activeMenuWebsiteNumber}`}>#{String(activeMenuWebsiteNumber).padStart(2, '0')}</span>
