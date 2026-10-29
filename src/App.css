@@ -398,7 +398,7 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 /* ---- tools sidebar (desktop) -------------------------------------------- */
 .tools-modal-backdrop { display: contents; }
 .tools-modal-heading, .tools-modal-close, .tools-modal-handle, .tools-fab { display: none; }
-.side-column { position: sticky; top: 76px; width: 344px; flex: none; max-height: calc(100vh - 92px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; display: grid; gap: 12px; align-content: start; padding-right: 2px; }
+.side-column { position: sticky; top: 58px; width: 344px; flex: none; max-height: calc(100vh - 74px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; display: grid; gap: 12px; align-content: start; padding-right: 2px; }
 .tool-panel { padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .tool-panel h2 { margin: 0 0 14px; font-size: 15.5px; line-height: 1.3; letter-spacing: -.01em; font-weight: 500; }
 .tool-panel form { display: grid; gap: 10px; }
@@ -589,12 +589,12 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
   .topbar-float, .topbar-float.is-visible { transition-duration: .01ms; }
 }
 /* ---- floating navbar: scroll targets, laptop and mobile menu -------------- */
-.run-progress, .results-report { scroll-margin-top: 76px; }
+.run-progress, .results-report, #websites-list { scroll-margin-top: 76px; }
 @media (max-width: 1360px) {
   .nb-minor { display: none; }
 }
 @media (max-width: 1040px) {
-  .run-progress, .results-report { scroll-margin-top: calc(70px + env(safe-area-inset-top, 0px)); }
+  .run-progress, .results-report, #websites-list { scroll-margin-top: calc(70px + env(safe-area-inset-top, 0px)); }
   .topbar-float { top: 0; width: 100%; max-width: none; height: calc(54px + env(safe-area-inset-top, 0px)); min-height: 0; padding: env(safe-area-inset-top, 0px) 12px 0 14px; justify-content: space-between; gap: 10px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
   .topbar-float .nb-summary, .topbar-float > .top-nav { display: none; }
   .nb-chips { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
@@ -618,7 +618,10 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
   .nb-tile.bad strong { color: var(--bad); }
   .nb-tile:hover { background: var(--surface-3); }
   .nb-tile[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); }
-  .nb-menu-progress { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); text-align: left; }
+  .nb-menu-progress { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); text-align: left; }
+  .nb-menu-progress-link { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; }
+  .nb-menu-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nb-menu-chips .progress-chip { border-color: var(--line); background: var(--surface); }
   .nb-menu-progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 500; }
   .nb-menu-progress-top b { color: var(--accent); font-variant-numeric: tabular-nums; }
   .nb-menu-progress .nb-bar { width: 100%; height: 6px; }
@@ -633,3 +636,25 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 }
 @keyframes nb-pop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .nb-menu { animation: none; } }
+
+/* ---- progress breakdown: clickable status filters ------------------------- */
+.progress-chip { padding: 2px 9px; border: 1px solid transparent; border-radius: 99px; color: var(--ink-2); font: inherit; font-size: inherit; font-variant-numeric: tabular-nums; transition: background-color .15s ease, border-color .15s ease; }
+.progress-chip:hover:not(:disabled) { background: var(--surface-3); border-color: var(--line-strong); color: var(--ink); }
+.progress-chip:disabled { color: var(--muted); cursor: default; }
+.progress-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.progress-breakdown { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.progress-filter-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 14px; border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); font-size: 13px; }
+.progress-filter-banner strong { text-transform: capitalize; }
+.progress-filter-banner button { padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); font-size: 12.5px; font-weight: 500; }
+.progress-filter-banner button:hover { background: var(--surface-3); }
+
+/* ---- per-row busy state (delete, pause, resume, queue) -------------------- */
+.site-entry.is-busy { background: var(--surface-2); }
+.site-entry.is-busy .site-info, .site-entry.is-busy .check-strip, .site-entry.is-busy .issue-count, .site-entry.is-busy .details-button { opacity: .55; pointer-events: none; }
+.badge.busy { background: var(--accent-soft); color: var(--accent); }
+.badge.busy::before { display: none; }
+.badge.busy .button-spinner { width: 11px; height: 11px; border-width: 1.5px; }
+.site-menu-trigger:disabled { cursor: wait; }
+.site-menu-trigger .button-spinner { width: 15px; height: 15px; }
+.delete-button .button-spinner, .cancel-button .button-spinner, .google-sheet-stop .button-spinner { width: 12px; height: 12px; border-width: 1.5px; margin-right: 6px; vertical-align: -2px; }
+.delete-button:disabled { cursor: wait; }

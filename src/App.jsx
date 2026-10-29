@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { summarizeIssue } from './issueSummary.js'
 import './App.css'
@@ -86,6 +86,15 @@ function ThemeIcon({ theme }) {
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.3A9 9 0 0 1 8.7 3.6 9 9 0 1 0 20.4 15.3Z" /></svg>
 }
 
+function matchesProgressFilter(website, filter, count) {
+  if (!filter) return true
+  if (!count || !website.active) return false
+  const status = website.currentCheck?.status
+  if (filter === 'checking') return status === 'processing'
+  if (filter === 'queued') return status === 'pending'
+  return !status
+}
+
 const issueCategories = ['Homepage load time', 'Homepage availability', 'News', 'Contact']
 
 function issueCategory(issue) {
@@ -96,7 +105,7 @@ function issueCategory(issue) {
   return null
 }
 
-const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions, summaryFilter, setSummaryFilter, issueFilter, setIssueFilter }) {
+const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions, summaryFilter, setSummaryFilter, issueFilter, setIssueFilter, progressFilter, progressFilterCount }) {
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
     const currentCheck = website.active ? website.currentCheck : null
@@ -110,7 +119,7 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
     category,
     rows.filter(({ issueTypes }) => issueTypes.includes(category)).length
   ]))
-  const visibleRows = issueFilter
+  const filteredRows = issueFilter
     ? rows.filter(({ issueTypes }) => issueTypes.includes(issueFilter))
     : summaryFilter === 'healthy'
       ? rows.filter(({ status }) => status === 'healthy')
@@ -119,6 +128,7 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
         : summaryFilter === 'not-checked'
           ? rows.filter(({ status }) => status === 'not-checked')
           : rows
+  const visibleRows = progressFilter ? filteredRows.filter(({ website }) => matchesProgressFilter(website, progressFilter, progressFilterCount)) : filteredRows
   const healthyCount = rows.filter(({ status }) => status === 'healthy').length
   const issueCount = issueRows.length
   const uncheckedCount = rows.filter(({ status }) => status === 'not-checked').length
@@ -219,7 +229,7 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
           </div>
         </article>
       })}
-      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : 'No websites to show.'}</p>}
+      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{progressFilter ? `No websites are currently ${progressFilter}.` : issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : 'No websites to show.'}</p>}
     </div>
   </section>
 })
@@ -240,7 +250,7 @@ function reuseWebsites(previous, next) {
   return changed ? merged : previous
 }
 
-const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isExpanded, menuOpen, deleting, onToggleSelect, onToggleExpand, onOpenActions, onCloseActions }) {
+const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isExpanded, menuOpen, deleting, busy, onToggleSelect, onToggleExpand, onOpenActions, onCloseActions }) {
   const check = website.active ? website.lastCheck : null
   const currentCheck = website.active ? website.currentCheck : null
   const issues = website.active ? check?.issues || [] : []
@@ -252,19 +262,19 @@ const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isEx
   const rowStatusClass = rowStatus === 'processing' ? 'checking' : rowStatus === 'pending' ? 'queued' : rowStatus
   const rowPercent = website.active ? ['healthy', 'warning', 'critical'].includes(rowStatus) ? 100 : ['processing', 'cancelled'].includes(rowStatus) ? currentCheck.progressPercent : 0 : 0
   const rowStage = !website.active ? 'Paused' : currentCheck?.progressStage || (rowPercent === 100 ? 'Complete' : rowStatus === 'not-checked' ? 'Not started' : rowStatusLabel)
-  return <article className={`site-entry ${website.active && (check?.status === 'warning' || check?.status === 'critical') ? 'has-issues' : ''}`} key={website._id}>
+  return <article className={`site-entry ${website.active && (check?.status === 'warning' || check?.status === 'critical') ? 'has-issues' : ''}${busy ? ' is-busy' : ''}`} key={website._id} aria-busy={busy ? true : undefined}>
     <div className="site-row">
-      <input className="site-select" type="checkbox" aria-label={`Select ${website.name}`} checked={selected} onChange={() => onToggleSelect(website._id)} disabled={deleting} />
+      <input className="site-select" type="checkbox" aria-label={`Select ${website.name}`} checked={selected} onChange={() => onToggleSelect(website._id)} disabled={deleting || Boolean(busy)} />
       <span className="site-number" aria-label={`Website ${index + 1}`}>{index + 1}</span>
       <span className={`status ${website.active ? 'active' : 'paused'}`}></span>
       <div className="site-info"><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
-      <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>
+      {busy ? <span className="badge busy" role="status"><span className="button-spinner" aria-hidden="true" />{busy}...</span> : <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>}
       <CheckStrip check={check} homepageStatus={homepageStatus} />
       {!website.active ? <span className="issue-count neutral">0 issues</span> : issues.length > 0 ? <span className="issue-count">{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span> : <span className="issue-count" aria-hidden="true" />}
       <button className="details-button" type="button" aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'View'} results for ${website.name}`} onClick={() => onToggleExpand(website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
       <div className="site-actions-menu">
-        <button className="site-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={menuOpen} onClick={(event) => menuOpen ? onCloseActions() : onOpenActions(event, website._id)}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
+        <button className="site-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={menuOpen} disabled={Boolean(busy)} onClick={(event) => menuOpen ? onCloseActions() : onOpenActions(event, website._id)}>
+          {busy ? <span className="button-spinner" aria-hidden="true" /> : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>}
         </button>
       </div>
     </div>
@@ -417,6 +427,11 @@ function App() {
   const [summaryFilter, setSummaryFilter] = useState('')
   const [issueFilter, setIssueFilter] = useState('')
   const [navMenuOpen, setNavMenuOpen] = useState(false)
+  const [progressFilter, setProgressFilter] = useState('')
+  const [siteBusy, setSiteBusy] = useState({})
+  const [bulkDeleteKind, setBulkDeleteKind] = useState('')
+  const markSiteBusy = useCallback((ids, label) => setSiteBusy((current) => { const next = { ...current }; for (const id of ids) next[id] = label; return next }), [])
+  const clearSiteBusy = useCallback((ids) => setSiteBusy((current) => { const next = { ...current }; for (const id of ids) delete next[id]; return next }), [])
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('monitor_theme', theme)
@@ -592,10 +607,19 @@ function App() {
   function openResultsFilter(filter) {
     const alreadyActive = resultsView && summaryFilter === filter
     setSummaryFilter(alreadyActive ? '' : filter)
+    setProgressFilter('')
     setIssueFilter('')
     navigateResultsView(true)
     setNavMenuOpen(false)
     scrollToSection('check-results')
+  }
+
+  function openProgressFilter(key) {
+    setProgressFilter((current) => current === key ? '' : key)
+    setSummaryFilter('')
+    setIssueFilter('')
+    setNavMenuOpen(false)
+    scrollToSection(resultsView ? 'check-results' : 'websites-list')
   }
 
   function openWebsitesView() {
@@ -733,6 +757,7 @@ function App() {
         : item),
       stats: { ...current.stats, active: Math.max(0, current.stats.active + (active ? 1 : -1)) }
     }))
+    markSiteBusy([website._id], active ? 'Resuming' : 'Pausing')
     try {
       await request(`/websites/${website._id}`, { method: 'PATCH', body: JSON.stringify({ active }) })
     } catch (error) {
@@ -742,7 +767,7 @@ function App() {
         stats: { ...current.stats, active: Math.max(0, current.stats.active + (active ? -1 : 1)) }
       }))
       notifyError(error.message)
-    }
+    } finally { clearSiteBusy([website._id]) }
   }
 
   async function deleteWebsite(website) {
@@ -755,18 +780,20 @@ function App() {
     })
     if (!confirmed) return
     setDeletingWebsites(true)
+    markSiteBusy([website._id], 'Deleting')
     try {
       await request(`/websites/${website._id}`, { method: 'DELETE' })
       setSelectedWebsiteIds((current) => current.filter((id) => id !== website._id))
       setExpandedWebsiteId((current) => current === website._id ? null : current)
       notifySuccess(`${website.name} deleted.`)
       await loadDashboard()
-    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false) }
+    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false); clearSiteBusy([website._id]) }
   }
 
   async function runWebsiteCheck(website) {
     setOpenSiteMenuId(null)
     setRunningWebsiteId(website._id)
+    markSiteBusy([website._id], 'Queueing')
     progressSignatureRef.current = ''
     setDashboard((current) => ({
       ...current,
@@ -787,7 +814,7 @@ function App() {
         setDashboard((current) => ({ ...current, stats: { ...current.stats, runProgress: { ...current.stats.runProgress, runId: result.runId } } }))
       } else notifyError(result.reason)
       await loadDashboard()
-    } catch (error) { notifyError(error.message) } finally { setRunningWebsiteId(null) }
+    } catch (error) { notifyError(error.message) } finally { setRunningWebsiteId(null); clearSiteBusy([website._id]) }
   }
 
   async function copyWebsiteUrl(website) {
@@ -863,12 +890,15 @@ function App() {
     })
     if (!confirmed) return
     setDeletingWebsites(true)
+    setBulkDeleteKind('selected')
+    const busyIds = [...selectedWebsiteIds]
+    markSiteBusy(busyIds, 'Deleting')
     try {
       const result = await request('/websites/bulk-action', { method: 'POST', body: JSON.stringify({ action: 'delete', ids: selectedWebsiteIds }) })
       setSelectedWebsiteIds([])
       notifySuccess(`${result.deleted} selected websites deleted.`)
       await loadDashboard()
-    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false) }
+    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false); setBulkDeleteKind(''); clearSiteBusy(busyIds) }
   }
 
   async function deleteAllWebsites() {
@@ -880,13 +910,16 @@ function App() {
     })
     if (!confirmed) return
     setDeletingWebsites(true)
+    setBulkDeleteKind('all')
+    const busyIds = dashboard.websites.map((website) => website._id)
+    markSiteBusy(busyIds, 'Deleting')
     try {
       const result = await request('/websites', { method: 'DELETE' })
       setSelectedWebsiteIds([])
       setQuery('')
       notifySuccess(`${result.deleted} websites deleted.`)
       await loadDashboard('')
-    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false) }
+    } catch (error) { notifyError(error.message) } finally { setDeletingWebsites(false); setBulkDeleteKind(''); clearSiteBusy(busyIds) }
   }
 
   async function runAll() {
@@ -1038,6 +1071,14 @@ function App() {
   const nbRunLabel = nbRunning ? nbWorkerOnline ? 'Checks running...' : 'Waiting for worker...' : !nbWorkerOnline ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'
     const nbProgressDetail = `${nbProgress.processing || 0} checking · ${nbProgress.queued || 0} queued · ${Math.max(0, (nbProgress.pending || 0) - (nbProgress.queued || 0))} waiting`
   const nbProgressTitle = nbProgress.status === 'running' ? 'Checking websites' : nbProgress.status === 'cancelled' ? 'Last run cancelled' : nbProgress.status === 'completed' ? 'All websites checked' : 'Website check progress'
+  const progressCounts = { checking: nbProgress.processing || 0, queued: nbProgress.queued || 0, waiting: Math.max(0, (nbProgress.pending || 0) - (nbProgress.queued || 0)) }
+  const progressFilterCount = progressFilter ? progressCounts[progressFilter] : 0
+  const progressChips = [
+    { key: 'checking', label: 'checking', title: 'Show websites being checked right now' },
+    { key: 'queued', label: 'queued', title: 'Show websites queued for checking' },
+    { key: 'waiting', label: 'waiting', title: 'Show websites waiting for their turn' }
+  ].map((chip) => ({ ...chip, count: progressCounts[chip.key] }))
+  const listedWebsites = progressFilter ? dashboard.websites.filter((website) => matchesProgressFilter(website, progressFilter, progressFilterCount)) : dashboard.websites
   const navStats = [
     { key: 'tracked', label: 'Tracked', value: dashboard.stats.total, minor: true, title: 'Show all tracked websites', onClick: openWebsitesView },
     { key: 'active', label: 'Active', value: dashboard.stats.active, minor: true, title: 'Show active websites', onClick: openWebsitesView },
@@ -1124,14 +1165,16 @@ function App() {
             <span>{stat.tone && <i aria-hidden="true" />}{stat.label}</span><strong>{stat.value}</strong>
           </button>)}
         </div>
-        <button type="button" className="nb-menu-progress" onClick={jumpToProgress}>
-          <span className="nb-menu-progress-top"><span>{nbProgressTitle}</span><b>{nbProgress.percent || 0}%</b></span>
-          <span className="nb-bar"><i style={{ width: `${nbProgress.percent || 0}%` }} /></span>
-          <small>{nbProgress.completed || 0} of {nbProgress.total || 0} websites checked</small>
-          <small>{nbProgressDetail}</small>
-        </button>
-        <button type="button" className="primary nb-menu-run" onClick={() => { setNavMenuOpen(false); runAll() }} disabled={nbRunDisabled}>{nbRunLabel}</button>
-        {nbRunning && <button type="button" className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
+        <div className="nb-menu-progress">
+          <button type="button" className="nb-menu-progress-link" onClick={jumpToProgress}>
+            <span className="nb-menu-progress-top"><span>{nbProgressTitle}</span><b>{nbProgress.percent || 0}%</b></span>
+            <span className="nb-bar"><i style={{ width: `${nbProgress.percent || 0}%` }} /></span>
+            <small>{nbProgress.completed || 0} of {nbProgress.total || 0} websites checked</small>
+          </button>
+          <div className="nb-menu-chips">{progressChips.map((chip) => <button type="button" key={chip.key} className={`progress-chip${progressFilter === chip.key ? ' active' : ''}`} aria-pressed={progressFilter === chip.key} disabled={chip.count === 0 && progressFilter !== chip.key} onClick={() => openProgressFilter(chip.key)}>{chip.count} {chip.label}</button>)}</div>
+        </div>
+        <button type="button" className="primary nb-menu-run" onClick={() => { setNavMenuOpen(false); runAll() }} disabled={nbRunDisabled} aria-busy={nbRunning}>{nbRunning && <span className="button-spinner" aria-hidden="true" />}{nbRunLabel}</button>
+        {nbRunning && <button type="button" className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun} aria-busy={cancelingRun}>{cancelingRun && <span className="button-spinner" aria-hidden="true" />}{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
         <div className="nb-menu-footer">
           <button type="button" className="nb-menu-btn" onClick={toggleTheme}><ThemeIcon theme={theme} />{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
           <button type="button" className="nb-menu-btn" onClick={signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M16 8l4 4-4 4M20 12H9" /></svg>Sign out</button>
@@ -1143,8 +1186,8 @@ function App() {
         <div><span>Active now</span><strong>{dashboard.stats.active}</strong></div>
         <div><span>Healthy sites</span><strong>{dashboard.stats.healthy || 0}</strong></div>
         <div className="run-controls">
-        <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'}>{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
-        {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun}>{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
+        <button className="primary run-button" onClick={runAll} disabled={dashboard.stats.runProgress?.status === 'running' || dashboard.stats.worker?.status !== 'online'} aria-busy={dashboard.stats.runProgress?.status === 'running'}>{dashboard.stats.runProgress?.status === 'running' && <span className="button-spinner" aria-hidden="true" />}{dashboard.stats.runProgress?.status === 'running' ? dashboard.stats.worker?.status === 'online' ? 'Checks running...' : 'Waiting for worker...' : dashboard.stats.worker?.status !== 'online' ? 'Worker offline' : selectedWebsiteIds.length ? `Run selected (${selectedWebsiteIds.length}) checks` : 'Run all checks'}</button>
+        {dashboard.stats.runProgress?.status === 'running' && <button className="cancel-button" onClick={cancelCurrentRun} disabled={cancelingRun} aria-busy={cancelingRun}>{cancelingRun && <span className="button-spinner" aria-hidden="true" />}{cancelingRun ? 'Cancelling...' : 'Cancel run'}</button>}
         </div>
       </section>}
       <section className="run-progress" id="run-progress" aria-label="Website check progress">
@@ -1156,13 +1199,17 @@ function App() {
       <div className="progress-track" role="progressbar" aria-label="Check completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow={dashboard.stats.runProgress.percent}>
         <span style={{ width: `${dashboard.stats.runProgress.percent}%` }}></span>
       </div>
-      <p>{dashboard.stats.runProgress.processing} checking · {dashboard.stats.runProgress.queued} queued · {Math.max(0, dashboard.stats.runProgress.pending - dashboard.stats.runProgress.queued)} waiting</p>
+      <p className="progress-breakdown">{progressChips.map((chip, index) => <Fragment key={chip.key}>{index > 0 && <span aria-hidden="true"> · </span>}<button type="button" className={`progress-chip${progressFilter === chip.key ? ' active' : ''}`} aria-pressed={progressFilter === chip.key} disabled={chip.count === 0 && progressFilter !== chip.key} title={chip.title} onClick={() => openProgressFilter(chip.key)}>{chip.count} {chip.label}</button></Fragment>)}</p>
       {dashboard.stats.worker?.status !== 'online' && <p className="worker-help">Worker is offline.</p>}
     </section>
     <section className="workspace">
       <div className="main-column">
+        {progressFilter && <div className="progress-filter-banner" role="status">
+          <span>Showing only <strong>{progressFilter}</strong> websites{resultsView ? '' : ` (${listedWebsites.length})`}</span>
+          <button type="button" onClick={() => setProgressFilter('')}>Show all</button>
+        </div>}
         {!resultsView && <>
-        <div className="section-heading">
+        <div className="section-heading" id="websites-list">
           <div><h2>Websites</h2><p className="muted">{dashboard.websites.length} {dashboard.websites.length === 1 ? 'site' : 'sites'}{query ? ' match your search' : ' in your inventory'}</p></div>
           <div className="search-field">
             <input ref={searchInputRef} className="search" type="search" value={query} onChange={(event) => { setQuery(event.target.value); loadDashboard(event.target.value) }} placeholder="Search sites..." aria-label="Search sites" />
@@ -1175,19 +1222,19 @@ function App() {
               className="site-select"
               type="checkbox"
               aria-label="Select all visible websites"
-              checked={dashboard.websites.length > 0 && dashboard.websites.every((website) => selectedWebsiteIds.includes(website._id))}
+              checked={listedWebsites.length > 0 && listedWebsites.every((website) => selectedWebsiteIds.includes(website._id))}
               onChange={(event) => setSelectedWebsiteIds((current) => event.target.checked
-                ? [...new Set([...current, ...dashboard.websites.map((website) => website._id)])]
-                : current.filter((id) => !dashboard.websites.some((website) => website._id === id)))}
-              disabled={loading || deletingWebsites || dashboard.websites.length === 0}
+                ? [...new Set([...current, ...listedWebsites.map((website) => website._id)])]
+                : current.filter((id) => !listedWebsites.some((website) => website._id === id)))}
+              disabled={loading || deletingWebsites || listedWebsites.length === 0}
             />
             <span>Select all sites</span>
           </label>
-          <button className="delete-button" onClick={deleteSelectedWebsites} disabled={!selectedWebsiteIds.length || deletingWebsites}>{deletingWebsites ? 'Deleting...' : `Delete selected (${selectedWebsiteIds.length})`}</button>
-          <button className="delete-button" onClick={deleteAllWebsites} disabled={deletingWebsites}>{deletingWebsites ? 'Deleting...' : 'Delete all'}</button>
+          <button className="delete-button" onClick={deleteSelectedWebsites} disabled={!selectedWebsiteIds.length || deletingWebsites} aria-busy={bulkDeleteKind === 'selected'}>{bulkDeleteKind === 'selected' && <span className="button-spinner" aria-hidden="true" />}{bulkDeleteKind === 'selected' ? 'Deleting...' : `Delete selected (${selectedWebsiteIds.length})`}</button>
+          <button className="delete-button" onClick={deleteAllWebsites} disabled={deletingWebsites} aria-busy={bulkDeleteKind === 'all'}>{bulkDeleteKind === 'all' && <span className="button-spinner" aria-hidden="true" />}{bulkDeleteKind === 'all' ? 'Deleting...' : 'Delete all'}</button>
         </div>
         <div className="site-list">
-          {loading ? <SiteListSkeleton /> : dashboard.websites.map((website, index) => <SiteRow
+          {loading ? <SiteListSkeleton /> : dashboard.websites.map((website, index) => !matchesProgressFilter(website, progressFilter, progressFilterCount) ? null : <SiteRow
             key={website._id}
             website={website}
             index={index}
@@ -1195,15 +1242,17 @@ function App() {
             expanded={expandedWebsiteId === website._id}
             menuOpen={openSiteMenuId === website._id}
             deleting={deletingWebsites}
+            busy={siteBusy[website._id] || ''}
             onToggleSelect={toggleWebsiteSelection}
             onToggleExpand={toggleWebsiteExpanded}
             onOpenActions={openWebsiteActions}
             onCloseActions={closeWebsiteActions}
           />)}
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
+          {!loading && dashboard.websites.length > 0 && progressFilter && !listedWebsites.length && <p className="muted empty">No websites are currently {progressFilter}.</p>}
         </div>
         </>}
-        {resultsView && <CheckReport summaryFilter={summaryFilter} setSummaryFilter={setSummaryFilter} issueFilter={issueFilter} setIssueFilter={setIssueFilter} websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
+        {resultsView && <CheckReport progressFilter={progressFilter} progressFilterCount={progressFilterCount} summaryFilter={summaryFilter} setSummaryFilter={setSummaryFilter} issueFilter={issueFilter} setIssueFilter={setIssueFilter} websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
         {activeMenuWebsite && siteMenuPosition && <div className={`site-actions-backdrop ${siteMenuClosing ? 'is-closing' : ''}`} onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeWebsiteActions()
         }} onWheelCapture={(event) => {
@@ -1288,7 +1337,7 @@ function App() {
                       {googleSheetStatus.spreadsheetUrl && <button className="google-sheet-cancel" type="button" onClick={() => setGoogleSheetSetupOpen(false)} disabled={googleSheetBusy}>Cancel</button>}
                     </form>
                   </>}
-                  {googleSheetStatus.spreadsheetUrl && <button className="google-sheet-stop" type="button" onClick={stopGoogleSheetSync} disabled={googleSheetBusy}>Stop syncing</button>}
+                  {googleSheetStatus.spreadsheetUrl && <button className="google-sheet-stop" type="button" onClick={stopGoogleSheetSync} disabled={googleSheetBusy} aria-busy={googleSheetBusy}>{googleSheetBusy && <span className="button-spinner" aria-hidden="true" />}{googleSheetBusy ? 'Please wait...' : 'Stop syncing'}</button>}
                 </>}
           </section>
           <section className="tool-panel"><h2>Add a website</h2><form onSubmit={addWebsite} aria-busy={addingWebsite}><input placeholder="Display name (optional)" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} disabled={addingWebsite} /><input required placeholder="https://example.com" value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} disabled={addingWebsite} /><button className="secondary" type="submit" disabled={addingWebsite} aria-busy={addingWebsite}>{addingWebsite && <span className="button-spinner" aria-hidden="true" />}{addingWebsite ? 'Adding website...' : 'Add website'}</button></form></section>
