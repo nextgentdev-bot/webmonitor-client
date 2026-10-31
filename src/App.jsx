@@ -69,15 +69,16 @@ function CheckStrip({ check, homepageStatus }) {
 const websiteResultStatus = (website) => !website.active ? 'paused' : website.currentCheck?.status || website.lastCheck?.status || 'not-checked'
 
 function summarizeResults(websites) {
-  let healthy = 0, issues = 0, unchecked = 0
+  let healthy = 0, issues = 0, unchecked = 0, cancelled = 0
   for (const website of websites) {
     const status = websiteResultStatus(website)
     const check = website.active ? website.lastCheck : null
     if (status === 'healthy') healthy += 1
     if (['warning', 'critical'].includes(status) || (check?.issues?.length || 0) > 0) issues += 1
     if (status === 'not-checked') unchecked += 1
+    if (status === 'cancelled') cancelled += 1
   }
-  return { healthy, issues, unchecked }
+  return { healthy, issues, unchecked, cancelled }
 }
 
 function ThemeIcon({ theme }) {
@@ -106,7 +107,8 @@ function issueCategory(issue) {
   return null
 }
 
-const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions, summaryFilter, setSummaryFilter, issueFilter, setIssueFilter, progressFilter, progressFilterCount }) {
+const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions, openSiteMenuId, closeWebsiteActions, summaryFilter, setSummaryFilter, issueFilter, setIssueFilter, progressFilter, progressFilterCount, selectedIds, onToggleMark, onOpenPaused }) {
+  const markedIds = new Set(selectedIds)
   const rows = websites.map((website, index) => {
     const check = website.active ? website.lastCheck : null
     const currentCheck = website.active ? website.currentCheck : null
@@ -128,11 +130,21 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
         ? issueRows
         : summaryFilter === 'not-checked'
           ? rows.filter(({ status }) => status === 'not-checked')
-          : rows
+          : summaryFilter === 'cancelled'
+            ? rows.filter(({ status }) => status === 'cancelled')
+            : rows
   const visibleRows = progressFilter ? filteredRows.filter(({ website }) => matchesProgressFilter(website, progressFilter, progressFilterCount)) : filteredRows
   const healthyCount = rows.filter(({ status }) => status === 'healthy').length
   const issueCount = issueRows.length
   const uncheckedCount = rows.filter(({ status }) => status === 'not-checked').length
+  const cancelledCount = rows.filter(({ status }) => status === 'cancelled').length
+  // Not checked / Cancelled buttons only appear while such websites exist (or while their filter is on, so it can be switched off).
+  const summaryButtons = [
+    { key: 'healthy', label: 'Healthy', count: healthyCount, className: '' },
+    { key: 'issues', label: 'Needs attention', count: issueCount, className: issueCount ? 'has-issues' : '' },
+    { key: 'not-checked', label: 'Not checked', count: uncheckedCount, className: '', optional: true },
+    { key: 'cancelled', label: 'Cancelled', count: cancelledCount, className: '', optional: true }
+  ].filter((button) => !button.optional || button.count > 0 || summaryFilter === button.key)
 
   return <section className="results-report" id="check-results" aria-labelledby="results-title">
     <div className="results-heading">
@@ -143,15 +155,9 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
       <span className="results-total">{rows.length} {rows.length === 1 ? 'website' : 'websites'}</span>
     </div>
     <div className="results-summary" aria-label="Result summary filters">
-      <button type="button" className={summaryFilter === 'healthy' ? 'active' : ''} aria-pressed={summaryFilter === 'healthy'} onClick={() => { setSummaryFilter((current) => current === 'healthy' ? '' : 'healthy'); setIssueFilter('') }}>
-        <span>Healthy</span><strong>{healthyCount}</strong>
-      </button>
-      <button type="button" className={`${issueCount ? 'has-issues ' : ''}${summaryFilter === 'issues' ? 'active' : ''}`} aria-pressed={summaryFilter === 'issues'} onClick={() => { setSummaryFilter((current) => current === 'issues' ? '' : 'issues'); setIssueFilter('') }}>
-        <span>Needs attention</span><strong>{issueCount}</strong>
-      </button>
-      <button type="button" className={summaryFilter === 'not-checked' ? 'active' : ''} aria-pressed={summaryFilter === 'not-checked'} onClick={() => { setSummaryFilter((current) => current === 'not-checked' ? '' : 'not-checked'); setIssueFilter('') }}>
-        <span>Not checked</span><strong>{uncheckedCount}</strong>
-      </button>
+      {summaryButtons.map((button) => <button type="button" key={button.key} className={`${button.className ? `${button.className} ` : ''}${summaryFilter === button.key ? 'active' : ''}`} aria-pressed={summaryFilter === button.key} onClick={() => { setSummaryFilter((current) => current === button.key ? '' : button.key); setIssueFilter('') }}>
+        <span>{button.label}</span><strong>{button.count}</strong>
+      </button>)}
     </div>
     <div className="fleet-bar" role="img" aria-label={`${healthyCount} healthy, ${issueCount} need attention, ${Math.max(0, rows.length - healthyCount - issueCount)} other`}>
       <span className="ok" style={{ flexGrow: healthyCount }} />
@@ -181,8 +187,12 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
           ? mobilePercent >= 100 ? 'Mobile checks complete' : currentCheck?.progressStage?.startsWith('Mobile') ? currentCheck.progressStage : 'Waiting for mobile checks'
           : status === 'pending' ? 'Queued' : 'Complete'
 
-        return <article className={`results-row ${status === 'critical' || status === 'warning' ? 'has-issues' : ''}`} key={website._id}>
+        const marked = markedIds.has(website._id)
+        return <article className={`results-row ${status === 'critical' || status === 'warning' ? 'has-issues' : ''}${marked ? ' is-marked' : ''}`} key={website._id}>
           <div className="results-site">
+            {marked && <button type="button" className="mark-tick" aria-label={`Unmark ${website.name}`} title="Marked. Tap to unmark" onClick={() => onToggleMark(website._id)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+            </button>}
             <span className="results-index">{String(index + 1).padStart(2, '0')}</span>
             <div><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
             <button className="site-menu-trigger results-menu-trigger" type="button" data-site-menu-trigger={website._id} aria-label={`Actions for ${website.name}`} aria-haspopup="dialog" aria-expanded={openSiteMenuId === website._id} onClick={(event) => openSiteMenuId === website._id ? closeWebsiteActions() : onOpenActions(event, website._id)}>
@@ -191,7 +201,9 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
           </div>
           <div className="results-data">
             <div className="results-status-line">
-              <span className={`badge ${statusClass}`}>{statusLabel}</span>
+              {status === 'paused'
+                ? <button type="button" className="badge paused paused-badge-button" title={website.pauseReason || 'Monitoring paused'} onClick={() => onOpenPaused(website)}>{statusLabel}</button>
+                : <span className={`badge ${statusClass}`}>{statusLabel}</span>}
               <CheckStrip check={check} homepageStatus={homepageStatus} />
               {['processing', 'pending'].includes(status) && <div className="results-progress">
                 <span>{checkStage}</span>
@@ -226,11 +238,11 @@ const CheckReport = memo(function CheckReport({ websites, loading, onOpenActions
                 {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issueIndex}-${issue}`}>{summarizeIssue(issue)}</li>)}</ul>}
               </div>
               {check.screenshots?.length > 0 && <div className="screenshot-links">{check.screenshots.map((image) => <a href={image} target="_blank" rel="noreferrer" key={image}>Open issue screenshot</a>)}</div>}
-            </> : <p className="results-empty">{website.active ? currentCheck?.status === 'processing' ? 'The latest check is running; detailed results will appear when it finishes.' : 'No check has been run for this website yet.' : 'Monitoring is paused.'}</p>}
+            </> : <p className="results-empty">{website.active ? currentCheck?.status === 'processing' ? 'The latest check is running; detailed results will appear when it finishes.' : 'No check has been run for this website yet.' : `Monitoring is paused.${website.pauseReason ? ` Reason: ${website.pauseReason}` : ''}`}</p>}
           </div>
         </article>
       })}
-      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{progressFilter ? `No websites are currently ${progressFilter}.` : issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : 'No websites to show.'}</p>}
+      {!loading && visibleRows.length === 0 && <p className="results-empty-state">{progressFilter ? `No websites are currently ${progressFilter}.` : issueFilter ? `No websites currently have this issue: ${issueFilter}.` : summaryFilter === 'healthy' ? 'No healthy websites found.' : summaryFilter === 'issues' ? 'No websites currently need attention.' : summaryFilter === 'not-checked' ? 'No unchecked websites found.' : summaryFilter === 'cancelled' ? 'No cancelled websites found.' : 'No websites to show.'}</p>}
     </div>
   </section>
 })
@@ -261,7 +273,7 @@ const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isEx
   const rowStatus = !website.active ? 'paused' : currentCheck?.status || check?.status || 'not-checked'
   const rowStatusLabel = rowStatus === 'processing' ? 'Checking' : rowStatus === 'pending' ? 'Queued' : rowStatus === 'cancelled' ? 'Cancelled' : rowStatus === 'not-checked' ? 'Not checked' : rowStatus === 'paused' ? 'Paused' : rowStatus.charAt(0).toUpperCase() + rowStatus.slice(1)
   const rowStatusClass = rowStatus === 'processing' ? 'checking' : rowStatus === 'pending' ? 'queued' : rowStatus
-  const rowPercent = website.active ? ['healthy', 'warning', 'critical'].includes(rowStatus) ? 100 : ['processing', 'cancelled'].includes(rowStatus) ? currentCheck.progressPercent : 0 : 0
+  const rowPercent = website.active ? ['healthy', 'warning', 'critical'].includes(rowStatus) ? 100 : ['processing', 'cancelled'].includes(rowStatus) ? currentCheck?.progressPercent || 0 : 0 : 0
   const rowStage = !website.active ? 'Paused' : currentCheck?.progressStage || (rowPercent === 100 ? 'Complete' : rowStatus === 'not-checked' ? 'Not started' : rowStatusLabel)
   return <article className={`site-entry ${website.active && (check?.status === 'warning' || check?.status === 'critical') ? 'has-issues' : ''}${busy ? ' is-busy' : ''}`} key={website._id} aria-busy={busy ? true : undefined}>
     <div className="site-row">
@@ -269,7 +281,7 @@ const SiteRow = memo(function SiteRow({ website, index, selected, expanded: isEx
       <span className="site-number" aria-label={`Website ${index + 1}`}>{index + 1}</span>
       <span className={`status ${website.active ? 'active' : 'paused'}`}></span>
       <div className="site-info"><strong>{website.name}</strong><a href={website.url} target="_blank" rel="noreferrer">{website.url}</a></div>
-      {busy ? <span className="badge busy" role="status"><span className="button-spinner" aria-hidden="true" />{busy}...</span> : rowStatus === 'paused' ? <button type="button" className="badge paused paused-badge-button" title={website.pauseReason || 'Monitoring paused'} onClick={onOpenPaused}>{rowStatusLabel}</button> : <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>}
+      {busy ? <span className="badge busy" role="status"><span className="button-spinner" aria-hidden="true" />{busy}...</span> : rowStatus === 'paused' ? <button type="button" className="badge paused paused-badge-button" title={website.pauseReason || 'Monitoring paused'} onClick={() => onOpenPaused(website)}>{rowStatusLabel}</button> : <span className={`badge ${rowStatusClass}`}>{rowStatusLabel}</span>}
       <CheckStrip check={check} homepageStatus={homepageStatus} />
       {!website.active ? <span className="issue-count neutral">0 issues</span> : issues.length > 0 ? <span className="issue-count">{issues.length} {issues.length === 1 ? 'issue' : 'issues'}</span> : <span className="issue-count" aria-hidden="true" />}
       <button className="details-button" type="button" aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Hide' : 'View'} results for ${website.name}`} onClick={() => onToggleExpand(website._id)}>{isExpanded ? 'Hide results' : 'View results'}</button>
@@ -328,6 +340,7 @@ function SiteActionIcon({ name }) {
     copy: <><rect x="8" y="8" width="12" height="12" rx="1" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></>,
     pause: <><path d="M8 5v14M16 5v14" /></>,
     play: <path d="m8 5 11 7-11 7V5Z" />,
+    tick: <path d="m5 12.5 4.5 4.5L19 7.5" />,
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
     delete: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="m6 7 1 13h10l1-13M9 7V4h6v3" /></>
   }
@@ -338,18 +351,21 @@ function SiteActionIcon({ name }) {
 function ConfirmationDialog({ confirmation, onConfirm, onCancel }) {
   const cancelButtonRef = useRef(null)
   const confirmButtonRef = useRef(null)
+  const cancel = useEffectEvent(() => onCancel())
 
   useEffect(() => {
     if (!confirmation) return undefined
     const previouslyFocused = document.activeElement
     const previousOverflow = document.body.style.overflow
+    const previousHtmlOverflow = document.documentElement.style.overflow
     document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
     cancelButtonRef.current?.focus()
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onCancel()
+        cancel()
       }
       if (event.key === 'Tab') {
         const first = cancelButtonRef.current
@@ -368,9 +384,10 @@ function ConfirmationDialog({ confirmation, onConfirm, onCancel }) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
+      document.documentElement.style.overflow = previousHtmlOverflow
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
     }
-  }, [confirmation, onCancel])
+  }, [confirmation])
 
   if (!confirmation) return null
 
@@ -391,27 +408,46 @@ function ConfirmationDialog({ confirmation, onConfirm, onCancel }) {
 
 function PauseWebsiteDialog({ website, onCancel, onSubmit }) {
   const [reason, setReason] = useState('')
+  const formRef = useRef(null)
   const textareaRef = useRef(null)
+  // Effect events keep this effect from re-running (and stealing focus / closing the mobile keyboard) every time the dashboard polls.
+  const cancel = useEffectEvent(() => onCancel())
 
   useEffect(() => {
     if (!website) return undefined
     const previouslyFocused = document.activeElement
     const previousOverflow = document.body.style.overflow
+    const previousHtmlOverflow = document.documentElement.style.overflow
     document.body.style.overflow = 'hidden'
-    textareaRef.current?.focus()
+    document.documentElement.style.overflow = 'hidden'
+    textareaRef.current?.focus({ preventScroll: true })
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onCancel()
+        cancel()
+      }
+      if (event.key === 'Tab') {
+        const focusable = formRef.current?.querySelectorAll('textarea:not(:disabled), button:not(:disabled)')
+        if (!focusable?.length) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+      document.documentElement.style.overflow = previousHtmlOverflow
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus({ preventScroll: true })
     }
-  }, [website, onCancel])
+  }, [website])
 
   if (!website) return null
   const trimmedReason = reason.trim()
@@ -425,19 +461,23 @@ function PauseWebsiteDialog({ website, onCancel, onSubmit }) {
   return <div className="confirmation-backdrop pause-dialog-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onCancel()
   }}>
-    <form className="confirmation-dialog pause-dialog" role="dialog" aria-modal="true" aria-labelledby="pause-title" aria-describedby="pause-description" onSubmit={submit}>
-      <div className="pause-dialog-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg>
-      </div>
+    <form ref={formRef} className="confirmation-dialog pause-dialog" role="dialog" aria-modal="true" aria-labelledby="pause-title" aria-describedby="pause-description" onSubmit={submit}>
+      <button className="pause-detail-close" type="button" aria-label="Close pause dialog" onClick={onCancel}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+      <div className="pause-dialog-icon" aria-hidden="true"><SiteActionIcon name="pause" /></div>
       <div className="pause-dialog-heading">
         <span>Pause monitoring</span>
         <h2 id="pause-title">{website.name}</h2>
       </div>
-      <p id="pause-description">Add a short reason for this pause. Monitoring will continue until you submit.</p>
+      <p id="pause-description">{website.url}</p>
+      <p className="pause-dialog-note">Scheduled and manual checks stop for this website, and any queued or running check is removed. Its last result is kept until you resume it.</p>
       <label className="pause-reason-field" htmlFor="pause-reason">
         <span>Pause reason <b>Required</b></span>
-        <textarea id="pause-reason" ref={textareaRef} value={reason} onChange={(event) => setReason(event.target.value)} rows="4" placeholder="Example: Temporarily unavailable while the redesign is being deployed" maxLength="300" />
-        <small><span>{trimmedReason ? `${reason.trim().length}/300` : 'Please write a reason'}</span></small>
+        <textarea id="pause-reason" ref={textareaRef} value={reason} onChange={(event) => setReason(event.target.value)} onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) submit(event)
+        }} rows="4" placeholder="Example: Temporarily unavailable while the redesign is being deployed" maxLength="300" />
+        <small><span>{trimmedReason ? `${reason.length}/300` : 'Please write a reason'}</span></small>
       </label>
       <div className="confirmation-actions">
         <button className="confirmation-cancel" type="button" onClick={onCancel}>Cancel</button>
@@ -447,28 +487,40 @@ function PauseWebsiteDialog({ website, onCancel, onSubmit }) {
   </div>
 }
 
-function PauseReasonDialog({ website, onClose }) {
+function PauseReasonDialog({ website, onClose, onResume }) {
   const closeButtonRef = useRef(null)
+  const close = useEffectEvent(() => onClose())
 
   useEffect(() => {
     if (!website) return undefined
     const previouslyFocused = document.activeElement
-    const previousOverflow = document.body.style.overflow
+    const previousBodyOverflow = document.body.style.overflow
+    const previousHtmlOverflow = document.documentElement.style.overflow
     document.body.style.overflow = 'hidden'
-    closeButtonRef.current?.focus()
+    document.documentElement.style.overflow = 'hidden'
+    closeButtonRef.current?.focus({ preventScroll: true })
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        close()
       }
     }
+    function preventBackgroundScroll(event) {
+      if (event.target instanceof Element && event.target.closest('.pause-detail-dialog')) return
+      event.preventDefault()
+    }
     document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('wheel', preventBackgroundScroll, { passive: false })
+    document.addEventListener('touchmove', preventBackgroundScroll, { passive: false })
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = previousOverflow
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+      document.removeEventListener('wheel', preventBackgroundScroll)
+      document.removeEventListener('touchmove', preventBackgroundScroll)
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousHtmlOverflow
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus({ preventScroll: true })
     }
-  }, [website, onClose])
+  }, [website])
 
   if (!website) return null
 
@@ -476,6 +528,9 @@ function PauseReasonDialog({ website, onClose }) {
     if (event.target === event.currentTarget) onClose()
   }}>
     <section className="confirmation-dialog pause-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="pause-detail-title" aria-describedby="pause-detail-description">
+      <button className="pause-detail-close" type="button" aria-label="Close pause reason" onClick={onClose}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
       <div className="pause-detail-icon" aria-hidden="true"><SiteActionIcon name="pause" /></div>
       <span className="pause-detail-label">Monitoring paused</span>
       <h2 id="pause-detail-title">{website.name}</h2>
@@ -486,6 +541,7 @@ function PauseReasonDialog({ website, onClose }) {
       </div>
       {website.pausedAt && <small className="pause-detail-time">Paused on {new Date(website.pausedAt).toLocaleString()}</small>}
       <div className="confirmation-actions">
+        <button className="confirmation-cancel" type="button" onClick={() => onResume(website)}>Resume monitoring</button>
         <button ref={closeButtonRef} className="confirmation-accept" type="button" onClick={onClose}>Close</button>
       </div>
     </section>
@@ -680,6 +736,8 @@ function App() {
     confirmationResolver.current = null
     setConfirmation(null)
   }, [])
+  const closePauseDialog = useCallback(() => setPauseWebsite(null), [])
+  const closePauseReason = useCallback(() => setPauseReasonWebsite(null), [])
 
   async function request(path, options = {}) {
     const response = await fetch(apiUrl(path), { cache: 'no-store', ...options, headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) } })
@@ -861,30 +919,27 @@ function App() {
 
   async function toggleWebsite(website) {
     setOpenSiteMenuId(null)
+    setPauseReasonWebsite(null)
     if (website.active) {
+      // Pausing always asks for a reason first.
       setPauseWebsite(website)
       return
     }
-    const active = !website.active
     setDashboard((current) => ({
       ...current,
-      websites: current.websites.map((item) => item._id === website._id
-        ? {
-            ...item,
-            active,
-            ...(active ? { pauseReason: '', pausedAt: null } : { lastCheck: null, currentCheck: null })
-          }
-        : item),
-      stats: { ...current.stats, active: Math.max(0, current.stats.active + (active ? 1 : -1)) }
+      websites: current.websites.map((item) => item._id === website._id ? { ...item, active: true, pauseReason: '', pausedAt: null } : item),
+      stats: { ...current.stats, active: current.stats.active + 1 }
     }))
-    markSiteBusy([website._id], active ? 'Resuming' : 'Pausing')
+    markSiteBusy([website._id], 'Resuming')
     try {
-      await request(`/websites/${website._id}`, { method: 'PATCH', body: JSON.stringify({ active }) })
+      await request(`/websites/${website._id}`, { method: 'PATCH', body: JSON.stringify({ active: true }) })
+      notifySuccess(`${website.name} resumed.`)
+      await loadDashboard(query)
     } catch (error) {
       setDashboard((current) => ({
         ...current,
         websites: current.websites.map((item) => item._id === website._id ? website : item),
-        stats: { ...current.stats, active: Math.max(0, current.stats.active + (active ? -1 : 1)) }
+        stats: { ...current.stats, active: Math.max(0, current.stats.active - 1) }
       }))
       notifyError(error.message)
     } finally { clearSiteBusy([website._id]) }
@@ -898,10 +953,11 @@ function App() {
     setDashboard((current) => ({
       ...current,
       websites: current.websites.map((item) => item._id === website._id
-        ? { ...item, active, pauseReason: reason, pausedAt: new Date().toISOString(), lastCheck: null, currentCheck: null }
+        ? { ...item, active, pauseReason: reason, pausedAt: new Date().toISOString(), currentCheck: null }
         : item),
       stats: { ...current.stats, active: Math.max(0, current.stats.active - 1) }
     }))
+    setSelectedWebsiteIds((current) => current.filter((id) => id !== website._id))
     markSiteBusy([website._id], 'Pausing')
     try {
       await request(`/websites/${website._id}`, { method: 'PATCH', body: JSON.stringify({ active, pauseReason: reason }) })
@@ -1070,8 +1126,13 @@ function App() {
   }
 
   async function runAll() {
+    const pausedIds = new Set(dashboard.websites.filter((website) => !website.active).map((website) => website._id))
+    const selectedIds = selectedWebsiteIds.filter((id) => !pausedIds.has(id))
+    if (selectedWebsiteIds.length && !selectedIds.length) {
+      notifyError('The marked websites are paused. Resume them or mark other websites.')
+      return
+    }
     progressSignatureRef.current = ''
-    const selectedIds = [...selectedWebsiteIds]
     const selectedSet = new Set(selectedIds)
     const total = selectedIds.length || dashboard.websites.filter((website) => website.active).length
     setDashboard((current) => ({
@@ -1234,8 +1295,9 @@ function App() {
     { key: 'paused', label: 'Paused', value: pausedCount, minor: true, title: 'Show paused websites', onClick: () => openProgressFilter('paused') },
     { key: 'healthy', label: 'Healthy', value: nbCounts.healthy, tone: 'ok', title: 'Show healthy websites in Check results', pressed: resultsView && summaryFilter === 'healthy', onClick: () => openResultsFilter('healthy') },
     { key: 'issues', label: 'Attention', value: nbCounts.issues, tone: 'bad', title: 'Show websites that need attention', pressed: resultsView && summaryFilter === 'issues', onClick: () => openResultsFilter('issues') },
-    { key: 'not-checked', label: 'Not checked', value: nbCounts.unchecked, minor: true, title: 'Show websites not checked yet', pressed: resultsView && summaryFilter === 'not-checked', onClick: () => openResultsFilter('not-checked') }
-  ]
+    { key: 'not-checked', label: 'Not checked', value: nbCounts.unchecked, minor: true, optional: true, title: 'Show websites not checked yet', pressed: resultsView && summaryFilter === 'not-checked', onClick: () => openResultsFilter('not-checked') },
+    { key: 'cancelled', label: 'Cancelled', value: nbCounts.cancelled, minor: true, optional: true, title: 'Show websites whose check was cancelled', pressed: resultsView && summaryFilter === 'cancelled', onClick: () => openResultsFilter('cancelled') }
+  ].filter((stat) => !stat.optional || stat.value > 0 || stat.pressed)
   const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark')
   const signOut = () => { localStorage.removeItem('monitor_token'); setToken(null) }
 
@@ -1398,13 +1460,20 @@ function App() {
             onToggleExpand={toggleWebsiteExpanded}
             onOpenActions={openWebsiteActions}
             onCloseActions={closeWebsiteActions}
-            onOpenPaused={() => openProgressFilter('paused')}
+            onOpenPaused={setPauseReasonWebsite}
           />)}
           {!loading && !dashboard.websites.length && <p className="muted empty">No websites yet. Add your first monitored site.</p>}
           {!loading && dashboard.websites.length > 0 && progressFilter && !listedWebsites.length && <p className="muted empty">No websites are currently {progressFilter}.</p>}
         </div>
         </>}
-        {resultsView && <CheckReport progressFilter={progressFilter} progressFilterCount={progressFilterCount} summaryFilter={summaryFilter} setSummaryFilter={setSummaryFilter} issueFilter={issueFilter} setIssueFilter={setIssueFilter} websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
+        {resultsView && selectedWebsiteIds.length > 0 && <div className="marked-bar" role="status">
+          <span className="marked-bar-count"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg></i>{selectedWebsiteIds.length} marked</span>
+          <div className="marked-bar-actions">
+            <button type="button" className="primary" onClick={runAll} disabled={nbRunDisabled} aria-busy={nbRunning}>{nbRunning && <span className="button-spinner" aria-hidden="true" />}{nbRunning ? nbWorkerOnline ? 'Checks running...' : 'Waiting for worker...' : !nbWorkerOnline ? 'Worker offline' : `Run marked (${selectedWebsiteIds.length})`}</button>
+            <button type="button" className="ghost" onClick={() => setSelectedWebsiteIds([])}>Clear marks</button>
+          </div>
+        </div>}
+        {resultsView && <CheckReport selectedIds={selectedWebsiteIds} onToggleMark={toggleWebsiteSelection} onOpenPaused={setPauseReasonWebsite} progressFilter={progressFilter} progressFilterCount={progressFilterCount} summaryFilter={summaryFilter} setSummaryFilter={setSummaryFilter} issueFilter={issueFilter} setIssueFilter={setIssueFilter} websites={dashboard.websites} loading={loading} onOpenActions={openWebsiteActions} openSiteMenuId={openSiteMenuId} closeWebsiteActions={closeWebsiteActions} />}
         {activeMenuWebsite && siteMenuPosition && <div className={`site-actions-backdrop ${siteMenuClosing ? 'is-closing' : ''}`} onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeWebsiteActions()
         }} onWheelCapture={(event) => {
@@ -1423,7 +1492,7 @@ function App() {
             <nav className="site-actions-list" aria-label="Website actions">
               <a href={activeMenuWebsite.url} target="_blank" rel="noreferrer" onClick={() => setOpenSiteMenuId(null)}><SiteActionIcon name="open" />Open website</a>
               <button type="button" onClick={() => runWebsiteCheck(activeMenuWebsite)} disabled={!activeMenuWebsite.active || dashboard.stats.worker?.status !== 'online' || runningWebsiteId === activeMenuWebsite._id}><SiteActionIcon name="check" />{runningWebsiteId === activeMenuWebsite._id ? 'Queueing check...' : 'Run check now'}</button>
-              <button type="button" onClick={() => { toggleWebsiteSelection(activeMenuWebsite._id); closeWebsiteActions() }}><SiteActionIcon name="check" />{selectedWebsiteIds.includes(activeMenuWebsite._id) ? 'Unmark website' : 'Mark website'}</button>
+              <button type="button" onClick={() => { toggleWebsiteSelection(activeMenuWebsite._id); closeWebsiteActions() }}><SiteActionIcon name="tick" />{selectedWebsiteIds.includes(activeMenuWebsite._id) ? 'Unmark website' : 'Mark website'}</button>
               <button type="button" onClick={() => copyWebsiteUrl(activeMenuWebsite)}><SiteActionIcon name="copy" />Copy URL</button>
               {!activeMenuWebsite.active && <button type="button" onClick={() => {
                 setSiteMenuClosing(false)
@@ -1512,13 +1581,15 @@ function App() {
       onCancel={() => resolveConfirmation(false)}
     />
     <PauseWebsiteDialog
+      key={pauseWebsite?._id || 'pause-closed'}
       website={pauseWebsite}
-      onCancel={() => setPauseWebsite(null)}
+      onCancel={closePauseDialog}
       onSubmit={submitPauseReason}
     />
     <PauseReasonDialog
       website={pauseReasonWebsite}
-      onClose={() => setPauseReasonWebsite(null)}
+      onClose={closePauseReason}
+      onResume={toggleWebsite}
     />
   </main>
 }

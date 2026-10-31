@@ -343,7 +343,7 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 .results-report { width: 100%; min-width: 0; }
 .results-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 16px; }
 .results-total { padding: 5px 12px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink-2); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
-.results-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; }
+.results-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 10px; }
 .results-summary > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 14px 18px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
 .results-summary > button:hover { border-color: var(--line-strong); background: var(--surface-2); }
 .results-summary > button.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -479,9 +479,12 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 .confirmation-accept.danger { background: var(--seg-bad); color: #fff; }
 .confirmation-accept.danger:hover { background: color-mix(in srgb, var(--seg-bad) 86%, #000); }
 .confirmation-accept:disabled { opacity: .45; cursor: not-allowed; }
-.pause-dialog { width: min(100%, 460px); }
+.pause-dialog { position: relative; width: min(100%, 460px); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; }
 .pause-dialog-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 14px; border-radius: 12px; background: var(--idle-bg); color: var(--idle); }
-.pause-dialog-icon svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.pause-dialog-icon svg, .pause-dialog-icon .site-action-icon { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.pause-dialog > p { margin-bottom: 12px; overflow-wrap: anywhere; }
+.pause-dialog > p.pause-dialog-note { margin-bottom: 18px; font-size: 12.5px; }
+.pause-dialog-heading { padding-right: 40px; }
 .pause-dialog-heading > span { display: block; margin-bottom: 3px; color: var(--muted); font-size: 12.5px; font-weight: 500; }
 .pause-dialog-heading h2 { overflow-wrap: anywhere; }
 .pause-reason-field { display: grid; gap: 7px; margin-bottom: 20px; }
@@ -489,13 +492,18 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 .pause-reason-field > span b { float: right; color: var(--muted); font-size: 11px; font-weight: 500; }
 .pause-reason-field textarea { min-height: 108px; }
 .pause-reason-field small { display: flex; justify-content: flex-end; min-height: 18px; color: var(--muted); font-size: 11.5px; }
-.pause-badge-button { min-height: 28px; border: 1px solid transparent; cursor: pointer; }
-.pause-badge-button:hover { border-color: var(--line-strong); filter: brightness(.98); }
+.pause-badge-button, .paused-badge-button { min-height: 28px; border: 1px solid transparent; cursor: pointer; }
+.pause-badge-button:hover, .paused-badge-button:hover { border-color: var(--line-strong); filter: brightness(.98); }
+.paused-badge-button:focus-visible { outline: 0; box-shadow: var(--ring); }
 .pause-reason-card { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--line-strong); border-left: 3px solid var(--idle); border-radius: var(--r-sm); background: var(--idle-bg); }
 .pause-reason-card span { color: var(--muted); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
 .pause-reason-card strong { color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
 .pause-reason-card small { color: var(--muted); font-size: 11.5px; }
+.pause-detail-dialog { position: relative; }
 .pause-detail-dialog h2 { overflow-wrap: anywhere; }
+.pause-detail-close { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: var(--r-sm); color: var(--muted); transition: background-color .15s ease, color .15s ease; }
+.pause-detail-close:hover { background: var(--surface-3); color: var(--ink); }
+.pause-detail-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .pause-detail-dialog > p { margin-bottom: 18px; overflow-wrap: anywhere; }
 .pause-detail-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 14px; border-radius: 12px; background: var(--idle-bg); color: var(--idle); }
 .pause-detail-icon .site-action-icon { width: 21px; height: 21px; stroke: currentColor; }
@@ -585,7 +593,7 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
   .check-details { margin: 0 12px 14px 12px; padding: 12px; }
   .check-grid, .results-check-grid { grid-template-columns: 1fr; }
   .results-summary { gap: 8px; }
-  .results-summary > div { padding: 12px; }
+  .results-summary > button { padding: 12px 14px; }
   .results-summary strong { font-size: 22px; }
   .results-toolbar { flex-direction: column; align-items: stretch; }
   .issue-filter-control { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -687,3 +695,24 @@ html[data-theme='dark'] .theme-toggle svg circle { fill: currentColor; stroke: n
 .site-menu-trigger .button-spinner { width: 15px; height: 15px; }
 .delete-button .button-spinner, .cancel-button .button-spinner, .google-sheet-stop .button-spinner { width: 12px; height: 12px; border-width: 1.5px; margin-right: 6px; vertical-align: -2px; }
 .delete-button:disabled { cursor: wait; }
+/* ---- marked websites (Check results) ---------------------------------------- */
+.mark-tick { position: relative; display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--btn-ink); cursor: pointer; animation: tick-in .18s cubic-bezier(.2, .8, .2, 1); transition: filter .15s ease, transform .12s ease; }
+.mark-tick::before { content: ''; position: absolute; inset: -9px; }
+.mark-tick:hover { filter: brightness(1.12); }
+.mark-tick:active { transform: scale(.9); }
+.mark-tick:focus-visible { outline: 0; box-shadow: var(--ring); }
+.mark-tick svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.results-row.is-marked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+@keyframes tick-in { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
+.marked-bar { position: sticky; top: calc(64px + env(safe-area-inset-top, 0px)); z-index: 40; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; margin-bottom: 12px; padding: 10px 14px; border: 1px solid var(--accent); border-radius: var(--r-md); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); box-shadow: var(--shadow-pop); }
+.marked-bar-count { display: inline-flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.marked-bar-count i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--btn-ink); }
+.marked-bar-count svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.marked-bar-actions { display: flex; align-items: center; gap: 8px; }
+.marked-bar-actions .primary { min-height: 38px; }
+@media (max-width: 760px) {
+  .marked-bar-actions { width: 100%; }
+  .marked-bar-actions .primary { flex: 1; }
+  .pause-reason-field textarea { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .mark-tick { animation: none; } }
